@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.eplico.openfit.core.DistanceUnit
 import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import kotlinx.coroutines.flow.first
@@ -51,6 +52,21 @@ class WorkoutRepositoryTest {
         val all = repository.exercises.first()
         assertTrue(all.size > 40)
         assertTrue(all.any { it.name == "Barbell Squat" && it.category == "Legs" })
+        val names = all.map { it.name }.toSet()
+        val missing = listOf(
+            "Back Extensions", "Barbell Row", "Bayesian Curl", "Cable Face Pull", "Cable Hammer Curl",
+            "Cable Overhead Triceps Extension", "Crunch Machine", "EZ-Bar Preacher Curl", "Flat Barbell Bench Press",
+            "Hack Squat", "Hip Abductors", "Hip Adductors", "Hyperextension (Glutes)", "Incline Barbell Bench Press",
+            "Lat Pulldown", "Lateral Machine Raise", "Leg Extension Machine", "Leg Press", "Overhead Press",
+            "Parallel Bar Triceps Dip", "Partial Reverse Preacher Curl", "Pull Up", "Rear Delt Machine Fly",
+            "Reverse Preacher Curl", "Rotary Torso", "Seated Leg Curl Machine", "Seated Machine Fly",
+            "Standing Calf Raise Machine", "Standing Leg Curl", "Triceps Pushdown", "Wide Grip Cable Rows",
+            "Wide Grip Preacher Curl",
+        ).filter { it !in names }
+        assertEquals(emptyList<String>(), missing)
+        // Every exercise added or renamed in version 3 is in the starter library under its new name.
+        assertTrue(DefaultExercises.renamedInVersion3.all { (old, new) -> old !in names && new in names })
+        assertTrue(DefaultExercises.addedInVersion3.all { (_, exercise) -> exercise.name in names })
     }
 
     @Test
@@ -176,14 +192,14 @@ class WorkoutRepositoryTest {
     fun reorderAndRemoveWithinAWorkout() = runBlocking {
         val a = repository.addExerciseToWorkout(day1, exercise("Barbell Squat").id)
         repository.addExerciseToWorkout(day1, exercise("Leg Press").id)
-        val c = repository.addExerciseToWorkout(day1, exercise("Leg Extension").id)
+        val c = repository.addExerciseToWorkout(day1, exercise("Leg Extension Machine").id)
         val workoutId = repository.observeDay(day1).first()!!.workout.id
 
         repository.moveInWorkout(workoutId, c, -1)
-        assertEquals(listOf("Barbell Squat", "Leg Extension", "Leg Press"), dayNames(day1))
+        assertEquals(listOf("Barbell Squat", "Leg Extension Machine", "Leg Press"), dayNames(day1))
 
         repository.removeFromWorkout(a)
-        assertEquals(listOf("Leg Extension", "Leg Press"), dayNames(day1))
+        assertEquals(listOf("Leg Extension Machine", "Leg Press"), dayNames(day1))
     }
 
     @Test
@@ -273,5 +289,35 @@ class WorkoutRepositoryTest {
         assertEquals(run, repository.observeEntry(entry).first()!!.sets.single().values)
         assertEquals(run, repository.lastSet(exercise("Running").id, day2)!!.set.values)
         assertEquals(mapOf(day1 to 1), repository.observeSetCountsByDay().first())
+    }
+
+    @Test
+    fun trophiesCompareTheCalculatedWeightAcrossDaysAndUnits() = runBlocking {
+        val curl = exercise("Cable Hammer Curl").id
+        suspend fun log(date: LocalDate, exerciseId: Long, vararg sets: SetValues): List<Long> {
+            val entry = repository.addExerciseToWorkout(date, exerciseId)
+            sets.forEach { repository.addSet(entry, it) }
+            return repository.observeEntry(entry).first()!!.sets.sortedBy { it.position }.map { it.id }
+        }
+        val first = log(day1, curl, SetValues(50.0, WeightUnit.KG, ratio = 2.0, reps = 8), SetValues(40.0, WeightUnit.KG, reps = 10))
+        val second = log(
+            day2,
+            curl,
+            SetValues(100.0, WeightUnit.KG, reps = 8), // 100 kg, same as 50 kg at 2x
+            SetValues(220.46, WeightUnit.LB, reps = 9), // 100 kg again, with more reps
+            SetValues(40.0, WeightUnit.KG, reps = 12), // most reps at 40 kg
+            SetValues(40.0, WeightUnit.KG, reps = 3),
+        )
+        val trophies = repository.observeTrophies(setOf(curl)).first()
+
+        assertEquals(Trophy.GOLD, trophies[first[0]])
+        assertEquals(Trophy.BLUE, trophies[first[1]])
+        assertEquals(listOf(Trophy.BRONZE, Trophy.SILVER, Trophy.BLUE, null), second.map { trophies[it] })
+
+        // Cardio doesn't earn trophies.
+        val running = exercise("Running").id
+        log(day3, running, SetValues(0.0, WeightUnit.KG, durationSeconds = 1500, distance = 5.0))
+        assertEquals(emptyMap<Long, Trophy>(), repository.observeTrophies(setOf(running)).first())
+        assertEquals(5, repository.observeTrophies(setOf(curl, running)).first().size)
     }
 }

@@ -5,9 +5,16 @@ A simple, offline workout log for Android, in the spirit of FitNotes and Verifit
 ## Features
 
 - **Log sets by day.** Each day is a workout: add exercises and log weight × reps for each set. Use the arrows to step between days, or tap the date to jump anywhere.
-- **Cardio and timed exercises.** Each exercise tracks *Reps*, *Time*, *Distance* or *Distance + time* (km or mi), and its weight can follow the workout's kg/lb switch, always be kg or lb, or be *None*. A starter **Cardio** category covers running, treadmill, walking, cycling, stationary bike, rowing, swimming, elliptical, stair climber and jump rope, plus Plank under Core. Distance + time sets show your pace.
+- **Cardio and timed exercises.** Each exercise tracks *Reps*, *Time*, *Distance* or *Distance + time* (metres, km or mi), and its weight can follow the workout's kg/lb switch, always be kg or lb, or be *None*. A starter **Cardio** category covers running, treadmill, walking, cycling, stationary bike, rowing, swimming, elliptical, stair climber and jump rope, plus Plank under Core. Distance + time sets show your pace.
 - **Your own categories.** Add, rename, reorder or delete categories in Settings → Categories, or create one straight from the new-exercise page. Deleting a category moves its exercises to *Other*.
 - **New exercise page.** Name, category, what to track, weight setting, and "Add to today's workout" in one place. Picking a cardio-style measure switches the weight setting to *None* for you.
+- **Trophies for personal records.** A small trophy appears beside a set when it's a record for that exercise:
+  - **Gold**: the heaviest weight you've done.
+  - **Silver**: ties your heaviest weight with more reps than before.
+  - **Bronze**: ties your heaviest weight *and* your best reps at it.
+  - **Blue**: not your heaviest, but the most reps you've done at that weight.
+
+  Records compare the **calculated weight** in either unit, so 50 kg at a 2× ratio is the same as 100 kg at 1× (or 220.5 lb). Each set is judged against the sets before it, so a trophy stays where it was earned. Trophies show on the Workout screen, while logging, and in the exercise's history. Change their colours in Settings → Trophies. Only rep-based exercises earn them.
 - **Weight and ratio.** Every set has a *weight* (the number on the stack or the bar) and a *ratio* (default `1`). OpenFit shows the **calculated weight** = weight × ratio, which is handy for pulley machines (2:1), single-arm handles (0.5), and so on.
 - **kg or lb per workout.** Each workout has its own unit, switchable from the Workout screen or while logging. Sets are stored exactly as entered and converted for display, so switching back and forth doesn't lose precision. The default unit for new workouts is set in Settings.
 - **Prefill from your last set.** When you open an exercise, the weight, ratio and reps come from the last set you did of it, converted to the current workout's unit. The screen also shows which day those numbers came from.
@@ -20,7 +27,7 @@ A simple, offline workout log for Android, in the spirit of FitNotes and Verifit
   - **Save spreadsheet** writes everything to an `.xlsx` file. Pick *Drive* in the file picker to upload it straight to Google Drive.
   - **Share spreadsheet** sends the `.xlsx` to Drive, Sheets, email or any other app.
   - **Import spreadsheet** loads an OpenFit spreadsheet back into the app, including one opened or edited in Google Sheets or Excel. Import only adds data and never deletes: exercises and presets are matched by name, and an exercise that already has sets on a given day keeps them. Importing the same file twice is harmless. If the file uses categories the app doesn't have, you choose whether to add them or file those exercises under *Other*. Use this to move your log to a new phone, or to keep it across reinstalls.
-- A starter library of about 60 common exercises, all of which can be edited, deleted or added to.
+- A starter library of about 80 common exercises (including machine and cable variations like the Bayesian Curl, Hack Squat, Rotary Torso and Wide Grip Cable Rows), all of which can be edited, deleted or added to. Updating from an older version adds the new ones and renames a few old starter names to match (for example *Tricep Pushdown* → *Triceps Pushdown*, *Pec Deck* → *Seated Machine Fly*), keeping their history. Exercises you've deleted aren't brought back, and a rename is skipped if you already have an exercise with the new name.
 
 ## Getting the app
 
@@ -44,7 +51,7 @@ To import a sheet you made yourself, you only need a **Sets** sheet with *Date* 
 - *Ratio* defaults to 1.
 - *Unit* accepts `kg` or `lb` and defaults to the day's unit.
 - *Time* accepts `25:30` or `1:02:03`; a plain number means minutes.
-- *Distance Unit* accepts `km` or `mi` and defaults to km.
+- *Distance Unit* accepts `m`, `km` or `mi` and defaults to km.
 - *Calculated Weight* is ignored on import.
 - A row with no weight, reps, time or distance adds the exercise to that day without logging a set.
 
@@ -58,7 +65,7 @@ Requirements: JDK 17+ and the Android SDK (API 35), for example through Android 
 
 ```bash
 ./gradlew :core:test            # pure-Kotlin unit tests (units, ratios, heatmap, streaks, spreadsheets)
-./gradlew :app:testDebugUnitTest # Robolectric tests: database, v1→v2 migration, backup round trip, app smoke tests
+./gradlew :app:testDebugUnitTest # Robolectric tests: database, migrations, trophies, backup round trip, app smoke tests
 ./gradlew :app:assembleDebug    # builds app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -66,7 +73,7 @@ Requirements: JDK 17+ and the Android SDK (API 35), for example through Android 
 
 | Module | What's in it |
 | --- | --- |
-| `core/` | Plain Kotlin, no Android: kg/lb and km/mi conversion, ratio and calculated-weight math, durations and pace, set descriptions, heatmap grids (month/year/lifetime), the weekly-goal streak, accent-colour palette generation, and the `.xlsx` backup format (a small dependency-free reader and writer). Fully unit-tested. |
+| `core/` | Plain Kotlin, no Android: kg/lb and m/km/mi conversion, ratio and calculated-weight math, durations and pace, set descriptions, heatmap grids (month/year/lifetime), the weekly-goal streak, trophy (personal record) rules, accent-colour palette generation, and the `.xlsx` backup format (a small dependency-free reader and writer). Fully unit-tested. |
 | `app/` | The Android app: Jetpack Compose + Material 3 UI, Room database, DataStore settings. |
 
 Inside `app/`:
@@ -77,5 +84,5 @@ Inside `app/`:
 - `ui/exercises`: exercise picker, the new/edit exercise page, and category management.
 - `ui/presets`: preset list and editor.
 - `ui/calendar`: the heatmap calendar and streak stats.
-- `ui/settings`: accent colour, weekly goal, units, first day of the week, spreadsheet save/share/import.
+- `ui/settings`: accent colour, trophy colours, weekly goal, units, first day of the week, spreadsheet save/share/import.
 - `data/BackupManager`: moves data between the database and `.xlsx` files via the system file picker and share sheet.

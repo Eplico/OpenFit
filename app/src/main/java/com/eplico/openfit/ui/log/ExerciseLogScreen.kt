@@ -55,6 +55,7 @@ import com.eplico.openfit.core.Durations
 import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetFormat
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightMath
 import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
@@ -66,6 +67,7 @@ import com.eplico.openfit.ui.AppViewModels
 import com.eplico.openfit.ui.common.ChoiceToggle
 import com.eplico.openfit.ui.common.StepperField
 import com.eplico.openfit.ui.common.TimeStepperField
+import com.eplico.openfit.ui.common.TrophyBadge
 import com.eplico.openfit.ui.common.UnitToggle
 import com.eplico.openfit.ui.common.describe
 import com.eplico.openfit.ui.common.detail
@@ -80,6 +82,7 @@ fun ExerciseLogScreen(
 ) {
     val entry = viewModel.entry
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val trophies by viewModel.trophies.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(viewModel.closed) {
@@ -124,15 +127,21 @@ fun ExerciseLogScreen(
             }
             if (entry == null) return@Column
             when (tab) {
-                0 -> TrackTab(viewModel, entry.exercise, entry.sets, entry.workout.unit)
-                else -> HistoryTab(entry.exercise, history)
+                0 -> TrackTab(viewModel, entry.exercise, entry.sets, entry.workout.unit, trophies)
+                else -> HistoryTab(entry.exercise, history, trophies)
             }
         }
     }
 }
 
 @Composable
-private fun TrackTab(viewModel: ExerciseLogViewModel, exercise: Exercise, sets: List<SetEntry>, workoutUnit: WeightUnit) {
+private fun TrackTab(
+    viewModel: ExerciseLogViewModel,
+    exercise: Exercise,
+    sets: List<SetEntry>,
+    workoutUnit: WeightUnit,
+    trophies: Map<Long, Trophy>,
+) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -153,6 +162,7 @@ private fun TrackTab(viewModel: ExerciseLogViewModel, exercise: Exercise, sets: 
                 exercise = exercise,
                 set = set,
                 workoutUnit = workoutUnit,
+                trophy = trophies[set.id],
                 selected = viewModel.editingSetId == set.id,
                 onClick = { viewModel.toggleSelect(set.id) },
             )
@@ -251,7 +261,7 @@ private fun EntryCard(viewModel: ExerciseLogViewModel, exercise: Exercise, worko
                             selected = viewModel.distanceUnit,
                             label = { it.label },
                             onSelect = viewModel::onDistanceUnitChange,
-                            modifier = Modifier.width(120.dp),
+                            modifier = Modifier.width(156.dp),
                         )
                     },
                 )
@@ -341,6 +351,7 @@ private fun LoggedSetRow(
     exercise: Exercise,
     set: SetEntry,
     workoutUnit: WeightUnit,
+    trophy: Trophy?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -364,7 +375,10 @@ private fun LoggedSetRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(exercise.describe(set.values, workoutUnit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(exercise.describe(set.values, workoutUnit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                TrophyBadge(trophy, Modifier.padding(start = 6.dp))
+            }
             exercise.detail(set.values, workoutUnit)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -380,7 +394,7 @@ private fun LoggedSetRow(
 }
 
 @Composable
-private fun HistoryTab(exercise: Exercise, history: List<HistorySet>) {
+private fun HistoryTab(exercise: Exercise, history: List<HistorySet>, trophies: Map<Long, Trophy>) {
     if (history.isEmpty()) {
         Text(
             "No history yet. Sets you log for this exercise will show up here.",
@@ -415,7 +429,7 @@ private fun HistoryTab(exercise: Exercise, history: List<HistorySet>) {
                         HorizontalDivider()
                         Spacer(Modifier.height(4.dp))
                         values.forEachIndexed { index, set ->
-                            Row(Modifier.padding(vertical = 3.dp)) {
+                            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     "${index + 1}",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -423,6 +437,7 @@ private fun HistoryTab(exercise: Exercise, history: List<HistorySet>) {
                                     modifier = Modifier.width(24.dp),
                                 )
                                 Text(exercise.describe(set, workoutUnit), style = MaterialTheme.typography.bodyMedium)
+                                TrophyBadge(trophies[sets[index].set.id], Modifier.padding(start = 6.dp), size = 16.dp)
                                 exercise.detail(set, workoutUnit)?.let {
                                     Spacer(Modifier.width(8.dp))
                                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

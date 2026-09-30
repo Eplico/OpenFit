@@ -145,6 +145,21 @@ object ColorMath {
 
     data class Lch(val l: Double, val c: Double, val h: Double)
 
+    /** "#RRGGBB" for an opaque ARGB colour. */
+    fun toHex(argb: Int): String = "#%06X".format(java.util.Locale.ROOT, argb and 0xFFFFFF)
+
+    /** Parses "#RRGGBB" / "RRGGBB" (or the short "#RGB") into an opaque ARGB colour, or null. */
+    fun parseHex(text: String): Int? {
+        val digits = text.trim().removePrefix("#")
+        val full = when {
+            digits.length == 3 -> digits.map { "$it$it" }.joinToString("")
+            digits.length == 6 -> digits
+            else -> return null
+        }
+        if (!full.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+        return 0xFF000000.toInt() or full.toInt(16)
+    }
+
     fun argbToLch(argb: Int): Lch {
         val r = toLinear((argb shr 16) and 0xFF)
         val g = toLinear((argb shr 8) and 0xFF)

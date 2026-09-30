@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.eplico.openfit.core.AccentColor
 import com.eplico.openfit.core.Palette
 import com.eplico.openfit.core.SchemeColors
+import com.eplico.openfit.core.Trophy
 
 /** GitHub-style contribution shades, index 0 = no workout, 4 = busiest. */
 data class HeatmapColors(val levels: List<Color>)
@@ -27,6 +28,13 @@ val LocalHeatmapColors = staticCompositionLocalOf {
     HeatmapColors(Palette.scheme(AccentColor.GREEN.seed!!, dark = false).heatmap.map(::Color))
 }
 
+/** Colours for the trophy badges beside record sets. */
+data class TrophyColors(private val picked: Map<Trophy, Int> = emptyMap()) {
+    operator fun get(trophy: Trophy): Color = Color(picked[trophy] ?: trophy.defaultColor)
+}
+
+val LocalTrophyColors = staticCompositionLocalOf { TrophyColors() }
+
 /** True when the wallpaper-based ("Material You") colours are available on this device. */
 @get:ChecksSdkIntAtLeast(api = Build.VERSION_CODES.S)
 val supportsWallpaperColors: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -34,6 +42,7 @@ val supportsWallpaperColors: Boolean get() = Build.VERSION.SDK_INT >= Build.VERS
 @Composable
 fun OpenFitTheme(
     accent: AccentColor = AccentColor.GREEN,
+    trophyColors: Map<Trophy, Int> = emptyMap(),
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
@@ -48,7 +57,10 @@ fun OpenFitTheme(
             generated.toColorScheme(darkTheme) to generated.heatmap
         }
     }
-    CompositionLocalProvider(LocalHeatmapColors provides HeatmapColors(heatmap.map(::Color))) {
+    CompositionLocalProvider(
+        LocalHeatmapColors provides HeatmapColors(heatmap.map(::Color)),
+        LocalTrophyColors provides TrophyColors(trophyColors),
+    ) {
         MaterialTheme(colorScheme = colorScheme, content = content)
     }
 }

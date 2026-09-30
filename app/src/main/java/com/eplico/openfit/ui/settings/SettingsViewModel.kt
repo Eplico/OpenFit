@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.eplico.openfit.core.AccentColor
 import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.BackupManager
 import com.eplico.openfit.data.ImportResult
@@ -50,6 +51,15 @@ class SettingsViewModel(
 
     fun setWeeklyGoal(goal: Int) {
         viewModelScope.launch { repository.setWeeklyGoal(goal) }
+    }
+
+    /** Null puts the trophy back to its default colour. */
+    fun setTrophyColor(trophy: Trophy, argb: Int?) {
+        viewModelScope.launch { repository.setTrophyColor(trophy, argb) }
+    }
+
+    fun resetTrophyColors() {
+        viewModelScope.launch { repository.resetTrophyColors() }
     }
 
     // ---- Spreadsheet export / import ----

@@ -53,6 +53,16 @@ class PaletteTest {
         assertEquals(darkLevels.sorted(), darkLevels) // brighter = busier on a dark background
     }
 
+    @Test
+    fun hexColours() {
+        assertEquals("#FFB300", ColorMath.toHex(0xFFFFB300.toInt()))
+        assertEquals(0xFFFFB300.toInt(), ColorMath.parseHex("#ffb300"))
+        assertEquals(0xFF1E88E5.toInt(), ColorMath.parseHex(" 1E88E5 "))
+        assertEquals(0xFFFF0000.toInt(), ColorMath.parseHex("#f00"))
+        assertEquals(null, ColorMath.parseHex("#12345"))
+        assertEquals(null, ColorMath.parseHex("#GGGGGG"))
+    }
+
     private fun hueDistance(a: Double, b: Double): Double {
         val d = abs(a - b) % 360.0
         return if (d > 180) 360 - d else d

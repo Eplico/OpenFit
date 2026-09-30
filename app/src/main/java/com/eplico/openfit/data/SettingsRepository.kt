@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.eplico.openfit.core.AccentColor
 import com.eplico.openfit.core.DistanceUnit
 import com.eplico.openfit.core.Streaks
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -28,7 +29,11 @@ data class UserSettings(
     val accent: AccentColor = AccentColor.GREEN,
     /** Workouts per week the streak is measured against. */
     val weeklyGoal: Int = Streaks.DEFAULT_GOAL,
+    /** ARGB colours picked for trophies; a trophy that isn't here uses its default colour. */
+    val trophyColors: Map<Trophy, Int> = emptyMap(),
 ) {
+    fun trophyColor(trophy: Trophy): Int = trophyColors[trophy] ?: trophy.defaultColor
+
     fun increment(unit: WeightUnit): Double = when (unit) {
         WeightUnit.KG -> kgIncrement
         WeightUnit.LB -> lbIncrement
@@ -53,6 +58,7 @@ class SettingsRepository(private val context: Context) {
         val distanceUnit = stringPreferencesKey("distance_unit")
         val accent = stringPreferencesKey("accent")
         val weeklyGoal = intPreferencesKey("weekly_goal")
+        val trophyColors = Trophy.entries.associateWith { intPreferencesKey("trophy_color_${it.name.lowercase()}") }
     }
 
     val settings: Flow<UserSettings> = context.dataStore.data.map { it.toSettings() }
@@ -84,6 +90,20 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.weeklyGoal] = goal.coerceIn(1, 7) }
     }
 
+    /** Sets the colour of one trophy, or goes back to its default when [argb] is null. */
+    suspend fun setTrophyColor(trophy: Trophy, argb: Int?) {
+        val key = Keys.trophyColors.getValue(trophy)
+        if (argb == null) {
+            context.dataStore.edit { it.remove(key) }
+        } else {
+            context.dataStore.edit { it[key] = argb }
+        }
+    }
+
+    suspend fun resetTrophyColors() {
+        context.dataStore.edit { prefs -> Keys.trophyColors.values.forEach { prefs.remove(it) } }
+    }
+
     private fun Preferences.toSettings(): UserSettings {
         val defaults = UserSettings()
         return UserSettings(
@@ -98,6 +118,7 @@ class SettingsRepository(private val context: Context) {
             accent = this[Keys.accent]?.let { name -> AccentColor.entries.firstOrNull { it.name == name } }
                 ?: defaults.accent,
             weeklyGoal = this[Keys.weeklyGoal]?.coerceIn(1, 7) ?: defaults.weeklyGoal,
+            trophyColors = Keys.trophyColors.mapNotNull { (trophy, key) -> this[key]?.let { trophy to it } }.toMap(),
         )
     }
 }

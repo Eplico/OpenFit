@@ -59,14 +59,21 @@ enum class WeightMode(val label: String) {
 }
 
 enum class DistanceUnit(val label: String, val meters: Double) {
+    M("m", 1.0),
     KM("km", 1000.0),
     MI("mi", 1609.344);
 
     fun convert(value: Double, target: DistanceUnit): Double =
         if (this == target) value else value * meters / target.meters
 
+    /** How far pace is quoted over: per 500 m for meters (rowing-machine style), otherwise per km / mi. */
+    val paceDistance: Double get() = if (this == M) 500.0 else 1.0
+
+    val paceLabel: String get() = if (this == M) "500m" else label
+
     companion object {
         fun parse(text: String): DistanceUnit? = when (text.trim().lowercase()) {
+            "m", "meter", "meters", "metre", "metres" -> M
             "km", "kms", "kilometer", "kilometers", "kilometre", "kilometres" -> KM
             "mi", "mile", "miles" -> MI
             else -> null
@@ -104,9 +111,9 @@ object Durations {
         return if (seconds > Int.MAX_VALUE) null else seconds.toInt()
     }
 
-    /** "5:06 /km" for a set with both distance and time, else null. */
+    /** "5:06 /km", "8:00 /mi" or "1:52 /500m" for a set with both distance and time, else null. */
     fun pace(seconds: Int, distance: Double, unit: DistanceUnit): String? {
         if (seconds <= 0 || distance <= 0.0) return null
-        return "${format(Math.round(seconds / distance).toInt())} /${unit.label}"
+        return "${format(Math.round(seconds * unit.paceDistance / distance).toInt())} /${unit.paceLabel}"
     }
 }

@@ -30,7 +30,7 @@ object DefaultExercises {
             "Dumbbell Fly",
             "Cable Crossover",
             "Machine Chest Press",
-            "Pec Deck",
+            "Seated Machine Fly",
             "Dips",
         ),
         "Back" to lifts(
@@ -41,8 +41,10 @@ object DefaultExercises {
             "Chin Up",
             "Lat Pulldown",
             "Seated Cable Row",
+            "Wide Grip Cable Rows",
             "T-Bar Row",
-            "Face Pull",
+            "Cable Face Pull",
+            "Back Extensions",
             "Rack Pull",
         ),
         "Shoulders" to lifts(
@@ -50,9 +52,10 @@ object DefaultExercises {
             "Seated Dumbbell Press",
             "Arnold Press",
             "Lateral Raise",
+            "Lateral Machine Raise",
             "Cable Lateral Raise",
             "Front Raise",
-            "Rear Delt Fly",
+            "Rear Delt Machine Fly",
             "Upright Row",
             "Shrug",
         ),
@@ -60,16 +63,23 @@ object DefaultExercises {
             "Barbell Curl",
             "Dumbbell Curl",
             "Hammer Curl",
+            "Cable Hammer Curl",
+            "Bayesian Curl",
             "Preacher Curl",
+            "EZ-Bar Preacher Curl",
+            "Wide Grip Preacher Curl",
+            "Reverse Preacher Curl",
+            "Partial Reverse Preacher Curl",
             "Cable Curl",
             "Incline Dumbbell Curl",
         ),
         "Triceps" to lifts(
-            "Tricep Pushdown",
+            "Triceps Pushdown",
             "Overhead Tricep Extension",
+            "Cable Overhead Triceps Extension",
             "Skull Crusher",
             "Close Grip Bench Press",
-            "Cable Overhead Extension",
+            "Parallel Bar Triceps Dip",
         ),
         "Legs" to lifts(
             "Barbell Squat",
@@ -77,17 +87,23 @@ object DefaultExercises {
             "Leg Press",
             "Hack Squat",
             "Romanian Deadlift",
-            "Leg Extension",
+            "Leg Extension Machine",
             "Lying Leg Curl",
-            "Seated Leg Curl",
+            "Seated Leg Curl Machine",
+            "Standing Leg Curl",
             "Bulgarian Split Squat",
             "Walking Lunge",
             "Hip Thrust",
-            "Standing Calf Raise",
+            "Hyperextension (Glutes)",
+            "Hip Abductors",
+            "Hip Adductors",
+            "Standing Calf Raise Machine",
             "Seated Calf Raise",
         ),
         "Core" to lifts(
             "Cable Crunch",
+            "Crunch Machine",
+            "Rotary Torso",
             "Hanging Leg Raise",
             "Ab Wheel Rollout",
             "Decline Crunch",
@@ -109,7 +125,36 @@ object DefaultExercises {
 
     val categories: List<String> get() = all.keys.toList()
 
+    private fun withCategory(names: Set<String>): List<Pair<String, DefaultExercise>> =
+        all.flatMap { (category, exercises) -> exercises.filter { it.name in names }.map { category to it } }
+
     /** Exercises that were added to the starter library in database version 2. */
     val addedInVersion2: List<Pair<String, DefaultExercise>>
-        get() = all.getValue("Cardio").map { "Cardio" to it } + ("Core" to all.getValue("Core").first { it.name == "Plank" })
+        get() = all.getValue("Cardio").map { "Cardio" to it } + withCategory(setOf("Plank"))
+
+    /** Starter exercises renamed in database version 3 (old name to new name). */
+    val renamedInVersion3: List<Pair<String, String>> = listOf(
+        "Tricep Pushdown" to "Triceps Pushdown",
+        "Face Pull" to "Cable Face Pull",
+        "Cable Overhead Extension" to "Cable Overhead Triceps Extension",
+        "Leg Extension" to "Leg Extension Machine",
+        "Seated Leg Curl" to "Seated Leg Curl Machine",
+        "Standing Calf Raise" to "Standing Calf Raise Machine",
+        "Pec Deck" to "Seated Machine Fly",
+        "Rear Delt Fly" to "Rear Delt Machine Fly",
+    )
+
+    /** Exercises that were added to the starter library in database version 3. */
+    val addedInVersion3: List<Pair<String, DefaultExercise>>
+        get() = withCategory(
+            setOf(
+                "Back Extensions", "Wide Grip Cable Rows",
+                "Bayesian Curl", "Cable Hammer Curl", "EZ-Bar Preacher Curl", "Wide Grip Preacher Curl",
+                "Reverse Preacher Curl", "Partial Reverse Preacher Curl",
+                "Parallel Bar Triceps Dip",
+                "Crunch Machine", "Rotary Torso",
+                "Hip Abductors", "Hip Adductors", "Hyperextension (Glutes)", "Standing Leg Curl",
+                "Lateral Machine Raise",
+            ),
+        )
 }

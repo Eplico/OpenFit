@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightMath
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.PresetWithItems
@@ -72,6 +73,7 @@ import com.eplico.openfit.data.values
 import com.eplico.openfit.ui.AppViewModels
 import com.eplico.openfit.ui.common.ConfirmDialog
 import com.eplico.openfit.ui.common.TextInputDialog
+import com.eplico.openfit.ui.common.TrophyBadge
 import com.eplico.openfit.ui.common.UnitToggle
 import com.eplico.openfit.ui.common.longLabel
 import com.eplico.openfit.ui.common.describe
@@ -211,6 +213,7 @@ fun WorkoutScreen(
                         ExerciseCard(
                             entry = entry,
                             unit = state.unit,
+                            trophies = state.trophies,
                             canMoveUp = index > 0,
                             canMoveDown = index < state.entries.lastIndex,
                             onClick = { onOpenEntry(entry.entry.id) },
@@ -298,6 +301,7 @@ private fun summary(state: WorkoutUiState): String {
 private fun ExerciseCard(
     entry: WorkoutEntry,
     unit: WeightUnit,
+    trophies: Map<Long, Trophy>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onClick: () -> Unit,
@@ -368,6 +372,7 @@ private fun ExerciseCard(
                         number = index + 1,
                         primary = entry.exercise.describe(set.values, unit),
                         secondary = entry.exercise.detail(set.values, unit),
+                        trophy = trophies[set.id],
                     )
                 }
             }
@@ -376,7 +381,7 @@ private fun ExerciseCard(
 }
 
 @Composable
-private fun SetSummaryRow(number: Int, primary: String, secondary: String?) {
+private fun SetSummaryRow(number: Int, primary: String, secondary: String?, trophy: Trophy?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 2.dp, horizontal = 0.dp),
@@ -395,6 +400,7 @@ private fun SetSummaryRow(number: Int, primary: String, secondary: String?) {
         }
         Spacer(Modifier.width(12.dp))
         Text(primary, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        TrophyBadge(trophy, Modifier.padding(start = 6.dp))
         if (secondary != null) {
             Spacer(Modifier.width(8.dp))
             Text(

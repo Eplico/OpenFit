@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -218,12 +219,17 @@ fun TextInputDialog(
 ) {
     var field by remember { mutableStateOf(TextFieldValue(initialValue, TextRange(initialValue.length))) }
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     val canConfirm = field.text.isNotBlank()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
+            // The dialog composes in its own window, so ask for focus from inside it, once the
+            // field is attached. Losing the race just means no keyboard, never a crash.
+            LaunchedEffect(focusRequester) {
+                withFrameNanos { }
+                runCatching { focusRequester.requestFocus() }
+            }
             OutlinedTextField(
                 value = field,
                 onValueChange = { field = it },

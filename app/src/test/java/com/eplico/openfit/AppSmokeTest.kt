@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -57,6 +58,8 @@ class AppSmokeTest {
         plusButtons[2].performScrollTo().performClick() // reps
         compose.onNodeWithText("Save set").performScrollTo().performClick()
         waitFor(hasText("× 1 rep", substring = true))
+        // The first set of an exercise is its heaviest yet.
+        waitFor(hasContentDescription("Gold trophy", substring = true))
 
         compose.onNodeWithContentDescription("Back").performClick()
         waitFor(hasText("Barbell Squat"))
@@ -76,6 +79,7 @@ class AppSmokeTest {
         compose.onNodeWithText("Settings").performClick()
         waitFor(hasText("Default unit"))
         waitFor(hasText("Accent colour"))
+        waitFor(hasText("Trophies"))
         waitFor(hasText("Workouts per week"))
         waitFor(hasText("Save spreadsheet"))
         waitFor(hasText("Import spreadsheet"))

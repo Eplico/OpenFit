@@ -178,6 +178,20 @@ interface SetDao {
         """,
     )
     fun observeHistory(exerciseId: Long): Flow<List<HistorySet>>
+
+    /** Every set of the given rep-based exercises, oldest first, for working out trophies. */
+    @Query(
+        """
+        SELECT s.id AS setId, we.exerciseId AS exerciseId, s.weight AS weight, s.unit AS unit, s.ratio AS ratio, s.reps AS reps
+        FROM sets s
+        JOIN workout_exercises we ON s.workoutExerciseId = we.id
+        JOIN workouts w ON we.workoutId = w.id
+        JOIN exercises e ON e.id = we.exerciseId
+        WHERE we.exerciseId IN (:exerciseIds) AND e.measure = 'REPS'
+        ORDER BY we.exerciseId, w.date, we.position, s.position
+        """,
+    )
+    fun observeTrophyRows(exerciseIds: List<Long>): Flow<List<TrophyRow>>
 }
 
 @Dao

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.core.volumeIn
 import com.eplico.openfit.data.PresetWithItems
@@ -17,7 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +31,8 @@ data class WorkoutUiState(
     val unit: WeightUnit = WeightUnit.KG,
     val workoutId: Long? = null,
     val entries: List<WorkoutEntry> = emptyList(),
+    /** Trophies earned by this day's sets, keyed by set id. */
+    val trophies: Map<Long, Trophy> = emptyMap(),
     val loading: Boolean = true,
 ) {
     val totalSets: Int get() = entries.sumOf { it.sets.size }
@@ -43,7 +48,12 @@ class WorkoutViewModel(
 
     val uiState: StateFlow<WorkoutUiState> = selectedDate
         .flatMapLatest { date ->
-            combine(repository.observeDay(date), settings.settings) { day, prefs ->
+            val dayFlow = repository.observeDay(date)
+            val trophyFlow = dayFlow
+                .map { loaded -> loaded?.entries.orEmpty().map { it.exercise.id }.toSet() }
+                .distinctUntilChanged()
+                .flatMapLatest { repository.observeTrophies(it) }
+            combine(dayFlow, settings.settings, trophyFlow) { day, prefs, trophies ->
                 WorkoutUiState(
                     date = date,
                     unit = day?.workout?.unit ?: prefs.defaultUnit,
@@ -51,6 +61,7 @@ class WorkoutViewModel(
                     entries = day?.entries.orEmpty()
                         .sortedBy { it.entry.position }
                         .map { entry -> entry.copy(sets = entry.sets.sortedBy { it.position }) },
+                    trophies = trophies,
                     loading = false,
                 )
             }

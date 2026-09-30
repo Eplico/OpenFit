@@ -10,6 +10,7 @@ import com.eplico.openfit.core.DistanceUnit
 import com.eplico.openfit.core.Durations
 import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightMath
 import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
@@ -52,12 +53,19 @@ class ExerciseLogViewModel(
     val settings: StateFlow<UserSettings> =
         settingsRepository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, UserSettings())
 
-    val history: StateFlow<List<HistorySet>> = repository.observeEntry(entryId)
+    private val exerciseId = repository.observeEntry(entryId)
         .map { it?.exercise?.id }
         .filterNotNull()
         .distinctUntilChanged()
+
+    val history: StateFlow<List<HistorySet>> = exerciseId
         .flatMapLatest { repository.observeHistory(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Trophies for every set of this exercise (today's and the history's), keyed by set id. */
+    val trophies: StateFlow<Map<Long, Trophy>> = exerciseId
+        .flatMapLatest { repository.observeTrophies(setOf(it)) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     // ---- Entry form ----
 
@@ -229,7 +237,9 @@ class ExerciseLogViewModel(
 
     fun stepDistance(direction: Int) = edit {
         val current = WeightMath.parse(distanceText) ?: 0.0
-        val step = if (current < 1.0 || (current == 1.0 && direction < 0)) 0.1 else 0.5
+        // Metres go up by 10 m to 100 m, then 50 m; km and miles by 0.1 to 1, then 0.5.
+        val (fine, coarse, switchAt) = if (distanceUnit == DistanceUnit.M) Triple(10.0, 50.0, 100.0) else Triple(0.1, 0.5, 1.0)
+        val step = if (current < switchAt || (current == switchAt && direction < 0)) fine else coarse
         val next = WeightMath.round((current + direction * step).coerceAtLeast(0.0), 2)
         distanceText = if (next == 0.0) "" else WeightMath.format(next)
     }

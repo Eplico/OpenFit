@@ -3,6 +3,9 @@ package com.eplico.openfit.data
 import androidx.room.withTransaction
 import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.Trophies
+import com.eplico.openfit.core.Trophy
+import com.eplico.openfit.core.TrophySet
 import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.core.backup.Backup
@@ -11,6 +14,7 @@ import com.eplico.openfit.core.backup.BackupPreset
 import com.eplico.openfit.core.backup.BackupWorkout
 import com.eplico.openfit.core.backup.BackupWorkoutExercise
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
@@ -238,6 +242,22 @@ class WorkoutRepository(
     suspend fun lastSet(exerciseId: Long, date: LocalDate): HistorySet? = setDao.lastSetOnOrBefore(exerciseId, date)
 
     fun observeHistory(exerciseId: Long): Flow<List<HistorySet>> = setDao.observeHistory(exerciseId)
+
+    /**
+     * Trophies for every set of the given exercises, keyed by set id. Each set is judged against the
+     * exercise's earlier sets by calculated weight (weight × ratio, in kg), so it keeps the trophy it
+     * earned. Only rep-based exercises get trophies.
+     */
+    fun observeTrophies(exerciseIds: Set<Long>): Flow<Map<Long, Trophy>> {
+        if (exerciseIds.isEmpty()) return flowOf(emptyMap())
+        return setDao.observeTrophyRows(exerciseIds.toList()).map { rows ->
+            val awarded = HashMap<Long, Trophy>()
+            rows.groupBy { it.exerciseId }.values.forEach { sets ->
+                awarded += Trophies.award(sets.map { TrophySet(it.setId, it.weight, it.unit, it.ratio, it.reps) })
+            }
+            awarded
+        }
+    }
 
     // ---- Presets ----
 

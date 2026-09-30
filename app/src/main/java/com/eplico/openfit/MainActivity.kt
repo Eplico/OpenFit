@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
             // Wait for settings (a few ms) so the chosen accent colour is used from the first frame.
             val settings: UserSettings? by settingsFlow.collectAsStateWithLifecycle(initialValue = null)
             val loaded = settings ?: return@setContent
-            OpenFitTheme(accent = loaded.accent) {
+            OpenFitTheme(accent = loaded.accent, trophyColors = loaded.trophyColors) {
                 OpenFitNavHost()
             }
         }

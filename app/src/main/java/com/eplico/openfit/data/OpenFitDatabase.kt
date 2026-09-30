@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Preset::class,
         PresetExercise::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -35,7 +35,7 @@ abstract class OpenFitDatabase : RoomDatabase() {
         fun build(context: Context): OpenFitDatabase =
             Room.databaseBuilder(context, OpenFitDatabase::class.java, NAME)
                 .addCallback(SeedCallback)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
 
         /** Same schema and starter exercises, kept in memory (for tests). */
@@ -86,6 +86,26 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/**
+ * Version 3 brings the starter library in line with common gym naming: eight starter exercises are
+ * renamed (their history comes along), and sixteen new ones are added. A rename is skipped if the
+ * new name is already taken; new exercises aren't added over an existing one with the same name.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        DefaultExercises.renamedInVersion3.forEach { (oldName, newName) ->
+            db.execSQL(
+                "UPDATE `exercises` SET `name` = ? WHERE `name` = ? COLLATE NOCASE " +
+                    "AND NOT EXISTS (SELECT 1 FROM `exercises` WHERE `name` = ? COLLATE NOCASE)",
+                arrayOf<Any>(newName, oldName, newName),
+            )
+        }
+        DefaultExercises.addedInVersion3.forEach { (category, exercise) ->
+            Seed.insertExerciseIfMissing(db, Seed.categoryOrOther(db, category), exercise)
+        }
+    }
+}
+
 /** Raw-SQL inserts shared by first-run seeding and migrations (Room DAOs aren't available there). */
 private object Seed {
     fun insertMissingCategories(db: SupportSQLiteDatabase, names: List<String>) {
@@ -98,6 +118,14 @@ private object Seed {
                 db.execSQL("INSERT INTO `categories` (`name`, `position`) VALUES (?, ?)", arrayOf<Any>(name, ++position))
             }
         }
+    }
+
+    /** [name] if that category exists (the user may have deleted it), otherwise "Other". */
+    fun categoryOrOther(db: SupportSQLiteDatabase, name: String): String {
+        val exists = db.query("SELECT 1 FROM `categories` WHERE `name` = ? COLLATE NOCASE", arrayOf<Any>(name)).use { it.moveToFirst() }
+        if (exists) return name
+        insertMissingCategories(db, listOf(DefaultExercises.OTHER))
+        return DefaultExercises.OTHER
     }
 
     fun insertExerciseIfMissing(db: SupportSQLiteDatabase, category: String, exercise: DefaultExercise) {

@@ -199,6 +199,16 @@ data class CategoryWithCount(
     val exerciseCount: Int,
 )
 
+/** One set as the trophy rules need it (see [com.eplico.openfit.core.Trophies]). */
+data class TrophyRow(
+    val setId: Long,
+    val exerciseId: Long,
+    val weight: Double,
+    val unit: WeightUnit,
+    val ratio: Double,
+    val reps: Int,
+)
+
 data class DayCount(
     val date: LocalDate,
     val count: Int,

@@ -32,6 +32,7 @@ class ExerciseTypeTest {
     fun paceForDistanceAndTime() {
         assertEquals("5:06 /km", Durations.pace(1530, 5.0, DistanceUnit.KM))
         assertEquals("8:00 /mi", Durations.pace(1440, 3.0, DistanceUnit.MI))
+        assertEquals("1:52 /500m", Durations.pace(448, 2000.0, DistanceUnit.M)) // rowing: 2k in 7:28
         assertNull(Durations.pace(0, 5.0, DistanceUnit.KM))
         assertNull(Durations.pace(600, 0.0, DistanceUnit.KM))
     }
@@ -60,6 +61,8 @@ class ExerciseTypeTest {
     fun convertsDistances() {
         assertEquals(3.107, DistanceUnit.KM.convert(5.0, DistanceUnit.MI), 0.001)
         assertEquals(1.609, DistanceUnit.MI.convert(1.0, DistanceUnit.KM), 0.001)
+        assertEquals(2000.0, DistanceUnit.KM.convert(2.0, DistanceUnit.M), 0.0)
+        assertEquals(DistanceUnit.M, DistanceUnit.parse("metres"))
     }
 
     @Test

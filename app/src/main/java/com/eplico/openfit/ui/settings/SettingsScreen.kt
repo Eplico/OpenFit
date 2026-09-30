@@ -105,6 +105,10 @@ fun SettingsScreen(
             )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle("Trophies")
+            TrophySection(settings, viewModel)
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("Weekly goal")
             ListItem(
                 headlineContent = { Text("Workouts per week") },
@@ -170,7 +174,7 @@ fun SettingsScreen(
                         selected = settings.distanceUnit,
                         label = { it.label },
                         onSelect = viewModel::setDistanceUnit,
-                        modifier = Modifier.width(132.dp),
+                        modifier = Modifier.width(156.dp),
                     )
                 },
             )
