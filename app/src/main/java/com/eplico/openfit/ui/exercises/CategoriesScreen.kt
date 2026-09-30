@@ -118,7 +118,7 @@ fun CategoriesScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { creating = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Add, contentDescription = "New category") },
                 text = { Text("New category") },
             )
         },

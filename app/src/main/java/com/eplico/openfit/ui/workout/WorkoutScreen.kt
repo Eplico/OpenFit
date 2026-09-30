@@ -170,7 +170,7 @@ fun WorkoutScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { onAddExercise(state.date) },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Add, contentDescription = "Add exercise") },
                 text = { Text("Add exercise") },
             )
         },

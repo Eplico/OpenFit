@@ -77,7 +77,7 @@ fun PresetEditScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { onAddExercise(viewModel.presetId) },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Add, contentDescription = "Add exercise") },
                 text = { Text("Add exercise") },
             )
         },

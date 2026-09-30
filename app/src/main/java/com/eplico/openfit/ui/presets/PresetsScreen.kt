@@ -66,7 +66,7 @@ fun PresetsScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { creating = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Add, contentDescription = "New preset") },
                 text = { Text("New preset") },
             )
         },

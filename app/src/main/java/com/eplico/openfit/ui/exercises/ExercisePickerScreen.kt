@@ -79,7 +79,7 @@ fun ExercisePickerScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { onNewExercise(viewModel.query.trim()) },
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                icon = { Icon(Icons.Filled.Add, contentDescription = "New exercise") },
                 text = { Text("New exercise") },
             )
         },

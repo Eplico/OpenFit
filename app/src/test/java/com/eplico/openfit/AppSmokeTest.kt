@@ -106,7 +106,8 @@ class AppSmokeTest {
         waitFor(hasText("Running"))
 
         // Create a brand-new exercise and land straight in its log.
-        compose.onAllNodesWithText("Add exercise").onFirst().performClick()
+        // (An extended FAB hides its text from accessibility, so it's found by its label.)
+        compose.onNodeWithContentDescription("Add exercise").performClick()
         waitFor(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Sled Push")
         waitFor(hasText("Create \"Sled Push\""))
@@ -131,7 +132,7 @@ class AppSmokeTest {
         waitFor(hasText("Cardio"))
         waitFor(hasText("where exercises go when their category is deleted", substring = true))
 
-        compose.onNodeWithText("New category").performClick()
+        compose.onNodeWithContentDescription("New category").performClick()
         waitFor(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Mobility")
         compose.onNodeWithText("Create").performClick()
