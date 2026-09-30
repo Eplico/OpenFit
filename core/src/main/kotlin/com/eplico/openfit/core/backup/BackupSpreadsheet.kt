@@ -329,7 +329,7 @@ object BackupSpreadsheet {
             val measure = Measure.parse(measureText)
             val weightMode = WeightMode.parse(weightText)
             if (measureText.isNotEmpty() && measure == null) {
-                warnings += "$EXERCISES row $rowNumber: unknown measure \"$measureText\" (use Reps, Time, Distance or Distance + time)"
+                warnings += "$EXERCISES row $rowNumber: unknown measure \"$measureText\" (use Reps, Time, Distance or Distance + Time)"
             }
             if (weightText.isNotEmpty() && weightMode == null) {
                 warnings += "$EXERCISES row $rowNumber: unknown weight setting \"$weightText\" (use Default unit, kg, lb or No weight)"

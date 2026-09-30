@@ -7,7 +7,7 @@ enum class Measure(val label: String) {
     REPS("Reps"),
     TIME("Time"),
     DISTANCE("Distance"),
-    DISTANCE_TIME("Distance + time");
+    DISTANCE_TIME("Distance + Time");
 
     val usesReps: Boolean get() = this == REPS
     val usesTime: Boolean get() = this == TIME || this == DISTANCE_TIME

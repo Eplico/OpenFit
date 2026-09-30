@@ -134,7 +134,7 @@ class BackupSpreadsheetTest {
                 "Categories" to listOf(listOf("Category"), listOf("Conditioning"), listOf("Mobility"), listOf("mobility")),
             ),
         )
-        assertEquals(listOf("Exercises row 3: unknown measure \"sideways\" (use Reps, Time, Distance or Distance + time)"), parsed.warnings)
+        assertEquals(listOf("Exercises row 3: unknown measure \"sideways\" (use Reps, Time, Distance or Distance + Time)"), parsed.warnings)
         assertEquals(
             listOf(
                 BackupExercise("Burpees", "Conditioning", Measure.TIME, WeightMode.NONE),

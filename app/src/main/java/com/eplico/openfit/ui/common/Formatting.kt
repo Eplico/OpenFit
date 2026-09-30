@@ -38,7 +38,7 @@ fun Exercise.detail(set: SetValues): String? = SetFormat.secondary(set)
 fun formatTotalWeight(value: Double, unit: WeightUnit): String =
     "${NumberFormat.getIntegerInstance().format(value.roundToLong())} ${unit.label}"
 
-/** Short description of how an exercise is tracked, e.g. "Distance + time · No weight". Null for plain lifts. */
+/** Short description of how an exercise is tracked, e.g. "Distance + Time · No weight". Null for plain lifts. */
 fun Exercise.typeSummary(): String? {
     if (measure == Measure.REPS && weightMode == WeightMode.DEFAULT) return null
     val weight = when (weightMode) {

@@ -39,7 +39,8 @@ class ExerciseTypeTest {
 
     @Test
     fun parsesMeasuresAndWeightModes() {
-        assertEquals(Measure.DISTANCE_TIME, Measure.parse("Distance + time"))
+        assertEquals(Measure.DISTANCE_TIME, Measure.parse("Distance + Time"))
+        assertEquals(Measure.DISTANCE_TIME, Measure.parse("Distance + time")) // spreadsheets from 0.4 and earlier
         assertEquals(Measure.DISTANCE_TIME, Measure.parse("time and distance"))
         assertEquals(Measure.REPS, Measure.parse("reps"))
         assertEquals(Measure.TIME, Measure.parse("Duration"))
