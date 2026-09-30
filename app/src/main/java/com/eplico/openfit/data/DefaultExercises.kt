@@ -6,7 +6,7 @@ import com.eplico.openfit.core.WeightMode
 data class DefaultExercise(
     val name: String,
     val measure: Measure = Measure.REPS,
-    val weightMode: WeightMode = WeightMode.WORKOUT,
+    val weightMode: WeightMode = WeightMode.DEFAULT,
 )
 
 /** Starter library inserted when the database is first created. Users can edit or delete any of it. */

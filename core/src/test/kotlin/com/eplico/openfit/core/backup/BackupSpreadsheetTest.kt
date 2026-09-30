@@ -26,19 +26,17 @@ class BackupSpreadsheetTest {
         workouts = listOf(
             BackupWorkout(
                 date = LocalDate.of(2026, 9, 30),
-                unit = WeightUnit.LB,
                 exercises = listOf(
                     BackupWorkoutExercise(squat, listOf(SetValues(225.0, WeightUnit.LB, 1.0, 5), SetValues(235.0, WeightUnit.LB, 1.0, 3))),
                     BackupWorkoutExercise(cable, listOf(SetValues(40.0, WeightUnit.KG, 0.5, 12))),
                     BackupWorkoutExercise(bench, emptyList()),
-                    BackupWorkoutExercise(running, listOf(SetValues(0.0, WeightUnit.LB, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))),
-                    BackupWorkoutExercise(plank, listOf(SetValues(0.0, WeightUnit.LB, durationSeconds = 90))),
+                    BackupWorkoutExercise(running, listOf(SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))),
+                    BackupWorkoutExercise(plank, listOf(SetValues(0.0, WeightUnit.KG, durationSeconds = 90))),
                     BackupWorkoutExercise(press, listOf(SetValues(180.0, WeightUnit.LB, 1.0, 10))),
                 ),
             ),
             BackupWorkout(
                 date = LocalDate.of(2026, 9, 28),
-                unit = WeightUnit.KG,
                 exercises = listOf(BackupWorkoutExercise(bench, listOf(SetValues(62.5, WeightUnit.KG, 1.0, 8)))),
             ),
         ),
@@ -76,7 +74,7 @@ class BackupSpreadsheetTest {
         assertEquals(
             listOf(
                 "Date", "Exercise", "Category", "Set", "Weight", "Unit", "Ratio", "Calculated Weight", "Reps",
-                "Time", "Distance", "Distance Unit", "Workout Unit",
+                "Time", "Distance", "Distance Unit",
             ),
             sets.header,
         )
@@ -88,7 +86,6 @@ class BackupSpreadsheetTest {
         assertEquals(Cell.Number(20.0), cableRow[7]) // calculated weight = 40 × 0.5
         assertEquals(Cell.Number(12.0), cableRow[8])
         assertEquals(Cell.Empty, cableRow[9])
-        assertEquals(Cell.Text("lb"), cableRow[12])
 
         val runRow = sets.rows.first { (it[1] as Cell.Text).value == running.name }
         assertEquals(List(4) { Cell.Empty }, runRow.subList(4, 8)) // no weight columns for "No weight"
@@ -115,8 +112,8 @@ class BackupSpreadsheetTest {
         val types = parsed.backup.exercises.associate { it.name to (it.measure to it.weightMode) }
         assertEquals(Measure.DISTANCE_TIME to WeightMode.NONE, types["Running"])
         assertEquals(Measure.TIME to WeightMode.NONE, types["Plank"])
-        assertEquals(Measure.DISTANCE to WeightMode.WORKOUT, types["Farmer Walk"])
-        assertEquals(Measure.REPS to WeightMode.WORKOUT, types["Squat"])
+        assertEquals(Measure.DISTANCE to WeightMode.DEFAULT, types["Farmer Walk"])
+        assertEquals(Measure.REPS to WeightMode.DEFAULT, types["Squat"])
         val run = parsed.backup.workouts.single().exercises.first().sets.single()
         assertEquals(SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI), run)
     }
@@ -168,9 +165,8 @@ class BackupSpreadsheetTest {
         assertEquals(emptyList<String>(), parsed.warnings)
         val (sep1, sep2) = parsed.backup.workouts
         assertEquals(LocalDate.of(2025, 9, 1), sep1.date) // serial 45901
-        assertEquals(WeightUnit.LB, sep1.unit)
+        assertEquals(listOf(SetValues(30.0, WeightUnit.LB, 1.0, 10)), sep1.exercises.single().sets)
         assertEquals(LocalDate.of(2026, 9, 1), sep2.date)
-        assertEquals(WeightUnit.KG, sep2.unit) // from the first explicit set unit
         assertEquals(listOf("Deadlift", "Pull Up"), sep2.exercises.map { it.exercise.name })
         assertEquals(
             listOf(SetValues(140.0, WeightUnit.KG, 1.0, 5), SetValues(150.5, WeightUnit.KG, 1.0, 3)),
@@ -178,6 +174,26 @@ class BackupSpreadsheetTest {
         )
         assertEquals(listOf(SetValues(0.0, WeightUnit.KG, 1.0, 8)), sep2.exercises[1].sets) // bodyweight
         assertEquals("", sep2.exercises[0].exercise.category)
+    }
+
+    @Test
+    fun setsWithoutAUnitUseTheOldWorkoutUnitColumnOrTheDefaultUnit() {
+        val sheet = workbook(
+            "Sets" to listOf(
+                listOf("Date", "Exercise", "Weight", "Unit", "Reps", "Workout Unit"),
+                listOf("2026-09-01", "Squat", "100", "", "5", "lb"), // an OpenFit 0.3 file: the day was in lb
+                listOf("2026-09-01", "Curl", "20", "kg", "10", "lb"), // a set's own unit always wins
+                listOf("2026-09-02", "Squat", "60", "", "5", ""),
+            ),
+        )
+        val sets = BackupSpreadsheet.fromWorkbook(sheet, defaultUnit = WeightUnit.LB).backup.workouts
+            .flatMap { day -> day.exercises.flatMap { it.sets } }
+        assertEquals(
+            listOf(SetValues(100.0, WeightUnit.LB, 1.0, 5), SetValues(20.0, WeightUnit.KG, 1.0, 10), SetValues(60.0, WeightUnit.LB, 1.0, 5)),
+            sets,
+        )
+        val inKg = BackupSpreadsheet.fromWorkbook(sheet, defaultUnit = WeightUnit.KG).backup.workouts.last()
+        assertEquals(WeightUnit.KG, inKg.exercises.single().sets.single().unit)
     }
 
     @Test

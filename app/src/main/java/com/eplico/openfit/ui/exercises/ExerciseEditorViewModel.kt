@@ -48,7 +48,7 @@ class ExerciseEditorViewModel(
         private set
     var measure by mutableStateOf(Measure.REPS)
         private set
-    var weightMode by mutableStateOf(WeightMode.WORKOUT)
+    var weightMode by mutableStateOf(WeightMode.DEFAULT)
         private set
     var addToTarget by mutableStateOf(true)
         private set
@@ -94,7 +94,7 @@ class ExerciseEditorViewModel(
     /** Picking a cardio-style measure switches weight to "No weight" unless the user already chose one. */
     fun selectMeasure(value: Measure) {
         measure = value
-        if (!weightTouched) weightMode = if (value == Measure.REPS) WeightMode.WORKOUT else WeightMode.NONE
+        if (!weightTouched) weightMode = if (value == Measure.REPS) WeightMode.DEFAULT else WeightMode.NONE
     }
 
     fun selectWeightMode(value: WeightMode) {

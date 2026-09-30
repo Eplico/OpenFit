@@ -46,13 +46,14 @@ class ExerciseTypeTest {
         assertNull(Measure.parse("speed"))
         assertEquals(WeightMode.NONE, WeightMode.parse("n/a"))
         assertEquals(WeightMode.LB, WeightMode.parse("LBS"))
-        assertEquals(WeightMode.WORKOUT, WeightMode.parse("Match workout"))
+        assertEquals(WeightMode.DEFAULT, WeightMode.parse("Default unit"))
+        assertEquals(WeightMode.DEFAULT, WeightMode.parse("Match workout")) // spreadsheets from 0.3 and earlier
         assertNull(WeightMode.parse("stone"))
     }
 
     @Test
     fun weightModeDecidesTheUnit() {
-        assertEquals(WeightUnit.LB, WeightMode.WORKOUT.unitFor(WeightUnit.LB))
+        assertEquals(WeightUnit.LB, WeightMode.DEFAULT.unitFor(WeightUnit.LB))
         assertEquals(WeightUnit.KG, WeightMode.KG.unitFor(WeightUnit.LB))
         assertNull(WeightMode.NONE.unitFor(WeightUnit.KG))
     }
@@ -67,24 +68,26 @@ class ExerciseTypeTest {
 
     @Test
     fun describesSets() {
+        // The calculated weight, in the unit the set was logged in; no separate ratio line.
         val strength = SetValues(60.0, WeightUnit.KG, 2.0, reps = 8)
-        assertEquals("60 kg × 8 reps", SetFormat.primary(strength, Measure.REPS, WeightUnit.KG))
-        assertEquals("Ratio 2 → 120 kg", SetFormat.secondary(strength, WeightUnit.KG))
-        assertEquals("8 reps", SetFormat.primary(strength.copy(weight = 0.0), Measure.REPS, WeightUnit.KG))
+        assertEquals("120 kg × 8 reps", SetFormat.primary(strength, Measure.REPS))
+        assertNull(SetFormat.secondary(strength))
+        assertEquals("100 lb × 1 rep", SetFormat.primary(SetValues(100.0, WeightUnit.LB, reps = 1), Measure.REPS))
+        assertEquals("8 reps", SetFormat.primary(strength.copy(weight = 0.0), Measure.REPS))
 
         val run = SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0)
-        assertEquals("5 km in 25:30", SetFormat.primary(run, Measure.DISTANCE_TIME, null))
-        assertEquals("5:06 /km", SetFormat.secondary(run, null))
+        assertEquals("5 km in 25:30", SetFormat.primary(run, Measure.DISTANCE_TIME))
+        assertEquals("5:06 /km", SetFormat.secondary(run))
 
         val plank = SetValues(0.0, WeightUnit.KG, durationSeconds = 90)
-        assertEquals("1:30", SetFormat.primary(plank, Measure.TIME, null))
-        assertNull(SetFormat.secondary(plank, null))
+        assertEquals("1:30", SetFormat.primary(plank, Measure.TIME))
+        assertNull(SetFormat.secondary(plank))
 
-        val carry = SetValues(40.0, WeightUnit.KG, distance = 0.05)
-        assertEquals("88.18 lb × 0.05 km", SetFormat.primary(carry, Measure.DISTANCE, WeightUnit.LB))
+        val carry = SetValues(40.0, WeightUnit.KG, distance = 50.0, distanceUnit = DistanceUnit.M)
+        assertEquals("40 kg × 50 m", SetFormat.primary(carry, Measure.DISTANCE))
 
-        assertEquals("0 reps", SetFormat.primary(SetValues(0.0, WeightUnit.KG), Measure.REPS, null))
-        assertEquals("0:00", SetFormat.primary(SetValues(0.0, WeightUnit.KG), Measure.TIME, null))
+        assertEquals("0 reps", SetFormat.primary(SetValues(0.0, WeightUnit.KG), Measure.REPS))
+        assertEquals("0:00", SetFormat.primary(SetValues(0.0, WeightUnit.KG), Measure.TIME))
     }
 
     @Test

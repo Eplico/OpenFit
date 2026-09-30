@@ -28,6 +28,7 @@ import java.time.LocalDate
 
 data class WorkoutUiState(
     val date: LocalDate,
+    /** The default unit, used for the day's total volume (each set shows in its own unit). */
     val unit: WeightUnit = WeightUnit.KG,
     val workoutId: Long? = null,
     val entries: List<WorkoutEntry> = emptyList(),
@@ -56,7 +57,7 @@ class WorkoutViewModel(
             combine(dayFlow, settings.settings, trophyFlow) { day, prefs, trophies ->
                 WorkoutUiState(
                     date = date,
-                    unit = day?.workout?.unit ?: prefs.defaultUnit,
+                    unit = prefs.defaultUnit,
                     workoutId = day?.workout?.id,
                     entries = day?.entries.orEmpty()
                         .sortedBy { it.entry.position }
@@ -89,11 +90,6 @@ class WorkoutViewModel(
 
     fun selectDate(date: LocalDate) {
         selectedDate.value = date
-    }
-
-    fun setUnit(unit: WeightUnit) {
-        val date = selectedDate.value
-        viewModelScope.launch { repository.setWorkoutUnit(date, unit) }
     }
 
     fun remove(workoutExerciseId: Long) {

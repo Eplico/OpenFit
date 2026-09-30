@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Preset::class,
         PresetExercise::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -35,7 +35,7 @@ abstract class OpenFitDatabase : RoomDatabase() {
         fun build(context: Context): OpenFitDatabase =
             Room.databaseBuilder(context, OpenFitDatabase::class.java, NAME)
                 .addCallback(SeedCallback)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
 
         /** Same schema and starter exercises, kept in memory (for tests). */
@@ -103,6 +103,17 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         DefaultExercises.addedInVersion3.forEach { (category, exercise) ->
             Seed.insertExerciseIfMissing(db, Seed.categoryOrOther(db, category), exercise)
         }
+    }
+}
+
+/**
+ * Version 4 drops the per-day kg/lb switch: every set already keeps its own unit, and the exercise
+ * weight setting that followed the day ("Match workout") becomes "Default unit" (from Settings).
+ * The workouts table keeps its unit column, unused, so nothing has to be rebuilt.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE `exercises` SET `weightMode` = 'DEFAULT' WHERE `weightMode` = 'WORKOUT'")
     }
 }
 

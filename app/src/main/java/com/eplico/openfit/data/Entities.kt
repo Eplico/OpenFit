@@ -25,7 +25,7 @@ data class Exercise(
     /** What each set records besides weight: reps, time, distance, or distance + time. */
     val measure: Measure = Measure.REPS,
     /** Whether the exercise has a weight, and whether it follows the workout's kg/lb or is fixed. */
-    val weightMode: WeightMode = WeightMode.WORKOUT,
+    val weightMode: WeightMode = WeightMode.DEFAULT,
 )
 
 /** A user-editable exercise category. [position] orders the picker and the categories screen. */
@@ -39,7 +39,10 @@ data class Category(
     val position: Int,
 )
 
-/** One training day. Every day has at most one workout, and each workout has its own unit. */
+/**
+ * One training day. Every day has at most one workout. [unit] is left over from when each day had
+ * its own kg/lb switch; it's no longer shown or used (every set keeps its own unit).
+ */
 @Entity(
     tableName = "workouts",
     indices = [Index(value = ["date"], unique = true)],
@@ -214,9 +217,14 @@ data class DayCount(
     val count: Int,
 )
 
-/** A logged set plus the day it was logged on and that day's display unit. */
+/** A logged set plus the day it was logged on. */
 data class HistorySet(
     @Embedded val set: SetEntry,
     val date: LocalDate,
-    val workoutUnit: WeightUnit,
+)
+
+/** Total calculated weight × reps of every set logged in [unit]. */
+data class UnitVolume(
+    val unit: WeightUnit,
+    val volume: Double,
 )

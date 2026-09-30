@@ -22,12 +22,11 @@ data class BackupExercise(
     /** Blank when unknown (e.g. a hand-made spreadsheet); the importer picks a fallback. */
     val category: String,
     val measure: Measure = Measure.REPS,
-    val weightMode: WeightMode = WeightMode.WORKOUT,
+    val weightMode: WeightMode = WeightMode.DEFAULT,
 )
 
 data class BackupWorkout(
     val date: LocalDate,
-    val unit: WeightUnit,
     val exercises: List<BackupWorkoutExercise>,
 )
 

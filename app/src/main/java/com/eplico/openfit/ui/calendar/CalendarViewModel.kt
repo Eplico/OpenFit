@@ -6,14 +6,19 @@ import com.eplico.openfit.core.Heatmap
 import com.eplico.openfit.core.HeatmapGrid
 import com.eplico.openfit.core.StreakStats
 import com.eplico.openfit.core.Streaks
+import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.SettingsRepository
 import com.eplico.openfit.data.WorkoutRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import java.time.DayOfWeek
@@ -37,9 +42,13 @@ data class CalendarUiState(
     /** Days with at least one set inside the visible range. */
     val workoutsInRange: Int = 0,
     val stats: StreakStats = StreakStats(0, 0, 0, Streaks.DEFAULT_GOAL, 0, 7 - Streaks.DEFAULT_GOAL),
+    /** Calculated weight × reps over every set ever logged, in [weightUnit] (the default unit). */
+    val totalWeightMoved: Double = 0.0,
+    val weightUnit: WeightUnit = WeightUnit.KG,
     val loading: Boolean = true,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModel(
     repository: WorkoutRepository,
     settings: SettingsRepository,
@@ -49,6 +58,11 @@ class CalendarViewModel(
     private val range = MutableStateFlow(CalendarRange.MONTH)
     private val month = MutableStateFlow(YearMonth.now())
     private val year = MutableStateFlow(LocalDate.now().year)
+
+    private val lifetimeVolume = settings.settings
+        .map { it.defaultUnit }
+        .distinctUntilChanged()
+        .flatMapLatest { unit -> repository.observeLifetimeVolume(unit).map { unit to it } }
 
     val uiState: StateFlow<CalendarUiState> = combine(
         range,
@@ -75,6 +89,7 @@ class CalendarViewModel(
             loading = false,
         )
     }
+        .combine(lifetimeVolume) { state, (unit, volume) -> state.copy(totalWeightMoved = volume, weightUnit = unit) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CalendarUiState())
 

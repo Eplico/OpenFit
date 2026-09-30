@@ -44,6 +44,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eplico.openfit.core.HeatmapGrid
 import com.eplico.openfit.core.StreakStats
 import com.eplico.openfit.ui.AppViewModels
+import com.eplico.openfit.ui.common.formatTotalWeight
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -173,6 +174,13 @@ private fun StatsRow(state: CalendarUiState) {
             StatTile(value = "${stats.current}", label = "Streak", modifier = Modifier.weight(1f))
             StatTile(value = "${stats.best}", label = "Best streak", modifier = Modifier.weight(1f))
             StatTile(value = "${stats.thisWeek}/${stats.goalPerWeek}", label = "This week", modifier = Modifier.weight(1f))
+        }
+        if (state.range == CalendarRange.LIFETIME) {
+            StatTile(
+                value = formatTotalWeight(state.totalWeightMoved, state.weightUnit),
+                label = "Total weight moved (weight × reps, every set)",
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Text(
             streakHint(stats),

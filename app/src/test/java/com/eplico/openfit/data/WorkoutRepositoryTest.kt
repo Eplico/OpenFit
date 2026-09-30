@@ -79,15 +79,18 @@ class WorkoutRepositoryTest {
     }
 
     @Test
-    fun newWorkoutUsesDefaultUnitAndCanBeSwitched() = runBlocking {
-        val defaultUnit = SettingsRepository(context).current().defaultUnit
-        repository.addExerciseToWorkout(day1, exercise("Barbell Squat").id)
-        assertEquals(defaultUnit, repository.observeDay(day1).first()!!.workout.unit)
+    fun setsKeepTheirOwnUnitsAndLifetimeVolumeAddsThemUp() = runBlocking {
+        val squat = repository.addExerciseToWorkout(day1, exercise("Barbell Squat").id)
+        repository.addSet(squat, SetValues(100.0, WeightUnit.KG, reps = 5)) // 500 kg
+        repository.addSet(squat, SetValues(50.0, WeightUnit.KG, ratio = 2.0, reps = 2)) // 200 kg
+        val curl = repository.addExerciseToWorkout(day2, exercise("Barbell Curl").id)
+        repository.addSet(curl, SetValues(100.0, WeightUnit.LB, reps = 10)) // 1000 lb, on a different day
+        val run = repository.addExerciseToWorkout(day2, exercise("Running").id)
+        repository.addSet(run, SetValues(0.0, WeightUnit.KG, durationSeconds = 600, distance = 2.0)) // no weight moved
 
-        repository.setWorkoutUnit(day1, WeightUnit.LB)
-        assertEquals(WeightUnit.LB, repository.observeDay(day1).first()!!.workout.unit)
-        repository.setWorkoutUnit(day1, WeightUnit.KG)
-        assertEquals(WeightUnit.KG, repository.observeDay(day1).first()!!.workout.unit)
+        assertEquals(WeightUnit.LB, repository.observeEntry(curl).first()!!.sets.single().unit)
+        assertEquals(700.0 + 453.59, repository.observeLifetimeVolume(WeightUnit.KG).first(), 0.01)
+        assertEquals(1543.24 + 1000.0, repository.observeLifetimeVolume(WeightUnit.LB).first(), 0.01)
     }
 
     @Test

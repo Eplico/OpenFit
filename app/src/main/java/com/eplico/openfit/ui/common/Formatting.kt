@@ -6,9 +6,11 @@ import com.eplico.openfit.core.SetValues
 import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.Exercise
+import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToLong
 
 private val dayFormat = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault())
 private val dayWithYearFormat = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.getDefault())
@@ -26,24 +28,23 @@ fun LocalDate.shortLabel(today: LocalDate = LocalDate.now()): String =
 
 fun LocalDate.longLabel(): String = format(longDayFormat)
 
-/** The unit this exercise's weights are shown in on a day whose workout is in [workoutUnit]; null = no weight. */
-fun Exercise.weightUnitOn(workoutUnit: WeightUnit): WeightUnit? = weightMode.unitFor(workoutUnit)
+/** "120 kg × 8 reps" (calculated weight, in the unit it was logged in), "5 km in 25:30", "1:30"… */
+fun Exercise.describe(set: SetValues): String = SetFormat.primary(set, measure)
 
-/** "60 kg × 8 reps", "5 km in 25:30", "1:30"… */
-fun Exercise.describe(set: SetValues, workoutUnit: WeightUnit): String =
-    SetFormat.primary(set, measure, weightUnitOn(workoutUnit))
+/** The pace of a distance + time set, or null. */
+fun Exercise.detail(set: SetValues): String? = SetFormat.secondary(set)
 
-/** Ratio and/or pace, or null. */
-fun Exercise.detail(set: SetValues, workoutUnit: WeightUnit): String? =
-    SetFormat.secondary(set, weightUnitOn(workoutUnit))
+/** "1,234,567 kg": a big total, rounded to whole units, with thousands separators. */
+fun formatTotalWeight(value: Double, unit: WeightUnit): String =
+    "${NumberFormat.getIntegerInstance().format(value.roundToLong())} ${unit.label}"
 
 /** Short description of how an exercise is tracked, e.g. "Distance + time · No weight". Null for plain lifts. */
 fun Exercise.typeSummary(): String? {
-    if (measure == Measure.REPS && weightMode == WeightMode.WORKOUT) return null
+    if (measure == Measure.REPS && weightMode == WeightMode.DEFAULT) return null
     val weight = when (weightMode) {
-        WeightMode.WORKOUT -> null
+        WeightMode.DEFAULT -> null
         WeightMode.NONE -> "No weight"
-        else -> "Always ${weightMode.label}"
+        else -> "In ${weightMode.label}"
     }
     return listOfNotNull(measure.label, weight).joinToString(" · ")
 }

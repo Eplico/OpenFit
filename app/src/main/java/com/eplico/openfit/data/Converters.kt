@@ -30,7 +30,7 @@ class Converters {
     fun weightModeToName(mode: WeightMode): String = mode.name
 
     @TypeConverter
-    fun nameToWeightMode(name: String): WeightMode = WeightMode.entries.firstOrNull { it.name == name } ?: WeightMode.WORKOUT
+    fun nameToWeightMode(name: String): WeightMode = WeightMode.entries.firstOrNull { it.name == name } ?: WeightMode.DEFAULT
 
     @TypeConverter
     fun distanceUnitToName(unit: DistanceUnit): String = unit.name

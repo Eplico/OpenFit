@@ -64,8 +64,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eplico.openfit.core.Trophy
-import com.eplico.openfit.core.WeightMath
-import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.PresetWithItems
 import com.eplico.openfit.data.WorkoutEntry
 import com.eplico.openfit.data.orderedItems
@@ -74,10 +72,10 @@ import com.eplico.openfit.ui.AppViewModels
 import com.eplico.openfit.ui.common.ConfirmDialog
 import com.eplico.openfit.ui.common.TextInputDialog
 import com.eplico.openfit.ui.common.TrophyBadge
-import com.eplico.openfit.ui.common.UnitToggle
 import com.eplico.openfit.ui.common.longLabel
 import com.eplico.openfit.ui.common.describe
 import com.eplico.openfit.ui.common.detail
+import com.eplico.openfit.ui.common.formatTotalWeight
 import com.eplico.openfit.ui.common.relativeLabel
 import java.time.Instant
 import java.time.LocalDate
@@ -195,7 +193,6 @@ fun WorkoutScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                UnitToggle(unit = state.unit, onUnitChange = viewModel::setUnit, modifier = Modifier.width(132.dp))
             }
 
             if (!state.loading && state.entries.isEmpty()) {
@@ -212,7 +209,6 @@ fun WorkoutScreen(
                     itemsIndexed(state.entries, key = { _, entry -> entry.entry.id }) { index, entry ->
                         ExerciseCard(
                             entry = entry,
-                            unit = state.unit,
                             trophies = state.trophies,
                             canMoveUp = index > 0,
                             canMoveDown = index < state.entries.lastIndex,
@@ -293,14 +289,13 @@ private fun summary(state: WorkoutUiState): String {
         if (exercises == 1) "1 exercise" else "$exercises exercises",
         if (state.totalSets == 1) "1 set" else "${state.totalSets} sets",
     )
-    if (state.volume > 0) parts += "${WeightMath.format(state.volume, 0)} ${state.unit.label} volume"
+    if (state.volume > 0) parts += "${formatTotalWeight(state.volume, state.unit)} volume"
     return parts.joinToString(" · ")
 }
 
 @Composable
 private fun ExerciseCard(
     entry: WorkoutEntry,
-    unit: WeightUnit,
     trophies: Map<Long, Trophy>,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -370,8 +365,8 @@ private fun ExerciseCard(
                 entry.sets.forEachIndexed { index, set ->
                     SetSummaryRow(
                         number = index + 1,
-                        primary = entry.exercise.describe(set.values, unit),
-                        secondary = entry.exercise.detail(set.values, unit),
+                        primary = entry.exercise.describe(set.values),
+                        secondary = entry.exercise.detail(set.values),
                         trophy = trophies[set.id],
                     )
                 }

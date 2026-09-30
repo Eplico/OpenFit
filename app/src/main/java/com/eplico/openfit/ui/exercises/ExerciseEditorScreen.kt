@@ -119,8 +119,8 @@ fun ExerciseEditorScreen(
             Section(
                 "Weight",
                 when (viewModel.weightMode) {
-                    WeightMode.WORKOUT -> "Uses the day's kg/lb switch."
-                    WeightMode.KG, WeightMode.LB -> "Always logged in ${viewModel.weightMode.label}, whatever the day is set to."
+                    WeightMode.DEFAULT -> "New sets start in your default unit (Settings). You can switch any set between kg and lb."
+                    WeightMode.KG, WeightMode.LB -> "New sets start in ${viewModel.weightMode.label}. You can still switch any set."
                     WeightMode.NONE -> "No weight field, e.g. for running or planks."
                 },
             ) {

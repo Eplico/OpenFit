@@ -57,7 +57,6 @@ import com.eplico.openfit.core.SetFormat
 import com.eplico.openfit.core.SetValues
 import com.eplico.openfit.core.Trophy
 import com.eplico.openfit.core.WeightMath
-import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.Exercise
 import com.eplico.openfit.data.HistorySet
@@ -73,7 +72,6 @@ import com.eplico.openfit.ui.common.describe
 import com.eplico.openfit.ui.common.detail
 import com.eplico.openfit.ui.common.relativeLabel
 import com.eplico.openfit.ui.common.shortLabel
-import com.eplico.openfit.ui.common.weightUnitOn
 
 @Composable
 fun ExerciseLogScreen(
@@ -127,7 +125,7 @@ fun ExerciseLogScreen(
             }
             if (entry == null) return@Column
             when (tab) {
-                0 -> TrackTab(viewModel, entry.exercise, entry.sets, entry.workout.unit, trophies)
+                0 -> TrackTab(viewModel, entry.exercise, entry.sets, trophies)
                 else -> HistoryTab(entry.exercise, history, trophies)
             }
         }
@@ -139,7 +137,6 @@ private fun TrackTab(
     viewModel: ExerciseLogViewModel,
     exercise: Exercise,
     sets: List<SetEntry>,
-    workoutUnit: WeightUnit,
     trophies: Map<Long, Trophy>,
 ) {
     LazyColumn(
@@ -147,7 +144,7 @@ private fun TrackTab(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        item { EntryCard(viewModel, exercise, workoutUnit) }
+        item { EntryCard(viewModel, exercise) }
         item {
             Text(
                 if (sets.isEmpty()) "No sets logged yet" else "Sets",
@@ -161,7 +158,6 @@ private fun TrackTab(
                 number = index + 1,
                 exercise = exercise,
                 set = set,
-                workoutUnit = workoutUnit,
                 trophy = trophies[set.id],
                 selected = viewModel.editingSetId == set.id,
                 onClick = { viewModel.toggleSelect(set.id) },
@@ -181,10 +177,10 @@ private fun TrackTab(
 }
 
 @Composable
-private fun EntryCard(viewModel: ExerciseLogViewModel, exercise: Exercise, workoutUnit: WeightUnit) {
+private fun EntryCard(viewModel: ExerciseLogViewModel, exercise: Exercise) {
     val editing = viewModel.editingSetId != null
     val measure = exercise.measure
-    val weightUnit = exercise.weightUnitOn(workoutUnit)
+    val weightUnit = viewModel.unit
     Card(Modifier.fillMaxWidth()) {
         Column(
             Modifier.padding(16.dp),
@@ -196,14 +192,8 @@ private fun EntryCard(viewModel: ExerciseLogViewModel, exercise: Exercise, worko
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                when (exercise.weightMode) {
-                    WeightMode.WORKOUT -> UnitToggle(unit = workoutUnit, onUnitChange = viewModel::setUnit, modifier = Modifier.width(132.dp))
-                    WeightMode.KG, WeightMode.LB -> Text(
-                        "Always in ${exercise.weightMode.label}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    WeightMode.NONE -> Unit
+                if (weightUnit != null) {
+                    UnitToggle(unit = weightUnit, onUnitChange = viewModel::setUnit, modifier = Modifier.width(132.dp))
                 }
             }
 
@@ -350,13 +340,11 @@ private fun LoggedSetRow(
     number: Int,
     exercise: Exercise,
     set: SetEntry,
-    workoutUnit: WeightUnit,
     trophy: Trophy?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
-    val shownUnit = exercise.weightUnitOn(workoutUnit)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -376,19 +364,12 @@ private fun LoggedSetRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(exercise.describe(set.values, workoutUnit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(exercise.describe(set.values), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 TrophyBadge(trophy, Modifier.padding(start = 6.dp))
             }
-            exercise.detail(set.values, workoutUnit)?.let {
+            exercise.detail(set.values)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }
-        if (shownUnit != null && set.weight > 0.0 && set.unit != shownUnit) {
-            Text(
-                "logged in ${set.unit.label}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -415,13 +396,12 @@ private fun HistoryTab(exercise: Exercise, history: List<HistorySet>, trophies: 
     ) {
         days.forEach { (date, sets) ->
             item(key = date.toEpochDay()) {
-                val workoutUnit = sets.first().workoutUnit
                 val values = sets.map { it.set.values }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(date.shortLabel(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            daySummary(exercise, values, workoutUnit)?.let { summary ->
+                            daySummary(exercise, values)?.let { summary ->
                                 Text(summary, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
                         }
@@ -436,9 +416,9 @@ private fun HistoryTab(exercise: Exercise, history: List<HistorySet>, trophies: 
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.width(24.dp),
                                 )
-                                Text(exercise.describe(set, workoutUnit), style = MaterialTheme.typography.bodyMedium)
+                                Text(exercise.describe(set), style = MaterialTheme.typography.bodyMedium)
                                 TrophyBadge(trophies[sets[index].set.id], Modifier.padding(start = 6.dp), size = 16.dp)
-                                exercise.detail(set, workoutUnit)?.let {
+                                exercise.detail(set)?.let {
                                     Spacer(Modifier.width(8.dp))
                                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                 }
@@ -451,9 +431,9 @@ private fun HistoryTab(exercise: Exercise, history: List<HistorySet>, trophies: 
     }
 }
 
-/** Headline for a day in the history: best estimated 1RM for lifts, totals for cardio. */
-private fun daySummary(exercise: Exercise, sets: List<SetValues>, workoutUnit: WeightUnit): String? {
-    val unit = exercise.weightUnitOn(workoutUnit)
+/** Headline for a day in the history: best estimated 1RM for lifts (in the unit the day's sets used), totals for cardio. */
+private fun daySummary(exercise: Exercise, sets: List<SetValues>): String? {
+    val unit = sets.firstOrNull { it.weight > 0.0 }?.unit
     if (exercise.measure == Measure.REPS) {
         if (unit == null) return "${sets.sumOf { it.reps }} reps total"
         val best = sets.maxOf { it.estimatedOneRepMaxIn(unit) }

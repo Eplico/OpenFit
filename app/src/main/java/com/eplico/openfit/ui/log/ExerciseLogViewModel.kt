@@ -37,12 +37,12 @@ import kotlinx.coroutines.launch
 class ExerciseLogViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: WorkoutRepository,
-    settingsRepository: SettingsRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val entryId: Long = checkNotNull(savedStateHandle.get<Long>("workoutExerciseId"))
 
-    /** The exercise-in-workout being logged, with its workout (date + unit) and sets. */
+    /** The exercise-in-workout being logged, with its workout (date) and sets. */
     var entry by mutableStateOf<WorkoutEntryWithWorkout?>(null)
         private set
 
@@ -95,16 +95,19 @@ class ExerciseLogViewModel(
     var error by mutableStateOf<String?>(null)
         private set
 
-    /** Unit the weight field is currently expressed in (tracks the workout unit for "Match workout"). */
-    private var formUnit: WeightUnit? = null
+    /**
+     * Unit of the weight being entered. Starts as the last set's unit (or the exercise's setting /
+     * the default unit), and switching it only relabels the number: nothing typed is converted.
+     */
+    var weightUnit by mutableStateOf(WeightUnit.KG)
+        private set
 
     val exercise: Exercise? get() = entry?.exercise
     val measure: Measure get() = exercise?.measure ?: Measure.REPS
-    val weightMode: WeightMode get() = exercise?.weightMode ?: WeightMode.WORKOUT
-    val workoutUnit: WeightUnit get() = entry?.workout?.unit ?: settings.value.defaultUnit
+    val weightMode: WeightMode get() = exercise?.weightMode ?: WeightMode.DEFAULT
 
     /** Unit the weight is entered in, or null when this exercise has no weight. */
-    val unit: WeightUnit? get() = weightMode.unitFor(workoutUnit)
+    val unit: WeightUnit? get() = if (weightMode.tracksWeight) weightUnit else null
 
     val weight: Double? get() = if (weightText.isBlank()) 0.0 else WeightMath.parse(weightText)?.takeIf { it >= 0.0 }
     val ratio: Double? get() = WeightMath.parse(ratioText)?.takeIf { it > 0.0 }
@@ -137,16 +140,13 @@ class ExerciseLogViewModel(
                     return@collect
                 }
                 val firstLoad = entry == null
-                entry = loaded.copy(sets = loaded.sets.sortedBy { it.position })
-                val newUnit = loaded.exercise.weightMode.unitFor(loaded.workout.unit)
                 if (firstLoad) {
-                    formUnit = newUnit
-                    distanceUnit = settings.value.distanceUnit
-                    prefill(loaded)
-                } else if (newUnit != null && formUnit != null && newUnit != formUnit) {
-                    convertWeight(formUnit!!, newUnit)
-                    formUnit = newUnit
+                    val prefs = settingsRepository.current()
+                    weightUnit = loaded.exercise.weightMode.unitFor(prefs.defaultUnit) ?: prefs.defaultUnit
+                    distanceUnit = prefs.distanceUnit
                 }
+                entry = loaded.copy(sets = loaded.sets.sortedBy { it.position })
+                if (firstLoad) prefill(loaded)
                 if (editingSetId != null && loaded.sets.none { it.id == editingSetId }) editingSetId = null
             }
         }
@@ -162,24 +162,20 @@ class ExerciseLogViewModel(
         prefillNote = if (last.date == loaded.workout.date) {
             null
         } else {
-            "From ${last.date.shortLabel()}: ${loaded.exercise.describe(last.set.values, last.workoutUnit)}"
+            "From ${last.date.shortLabel()}: ${loaded.exercise.describe(last.set.values)}"
         }
     }
 
+    /** Loads [values] into the form exactly as they were logged, units included. */
     private fun fillForm(values: SetValues) {
-        val shown = unit?.let { values.inUnit(it) } ?: values
-        weightText = if (shown.weight > 0.0) WeightMath.format(shown.weight) else ""
-        ratioText = WeightMath.format(shown.ratio, 3)
-        repsText = shown.reps.takeIf { it > 0 }?.toString() ?: ""
-        setTime(shown.durationSeconds)
-        distanceText = shown.distance.takeIf { it > 0.0 }?.let { WeightMath.format(it) } ?: ""
-        if (measure.usesDistance) distanceUnit = shown.distanceUnit
+        weightText = if (values.weight > 0.0) WeightMath.format(values.weight) else ""
+        if (values.weight > 0.0) weightUnit = values.unit
+        ratioText = WeightMath.format(values.ratio, 3)
+        repsText = values.reps.takeIf { it > 0 }?.toString() ?: ""
+        setTime(values.durationSeconds)
+        distanceText = values.distance.takeIf { it > 0.0 }?.let { WeightMath.format(it) } ?: ""
+        if (measure.usesDistance) distanceUnit = values.distanceUnit
         error = null
-    }
-
-    private fun convertWeight(from: WeightUnit, to: WeightUnit) {
-        val current = WeightMath.parse(weightText) ?: return
-        weightText = WeightMath.format(WeightMath.convertForEntry(current, from, to))
     }
 
     fun onWeightChange(text: String) = edit { weightText = text }
@@ -199,13 +195,8 @@ class ExerciseLogViewModel(
 
     fun onDistanceChange(text: String) = edit { distanceText = text }
 
-    fun onDistanceUnitChange(target: DistanceUnit) = edit {
-        val current = WeightMath.parse(distanceText)
-        if (current != null && target != distanceUnit) {
-            distanceText = WeightMath.format(distanceUnit.convert(current, target))
-        }
-        distanceUnit = target
-    }
+    /** Relabels the distance being entered; the number stays as typed. */
+    fun onDistanceUnitChange(target: DistanceUnit) = edit { distanceUnit = target }
 
     private inline fun edit(block: () -> Unit) {
         block()
@@ -294,7 +285,7 @@ class ExerciseLogViewModel(
         if (w == null || r == null || n == null || t == null || d == null || error != null) return null
         return SetValues(
             weight = w,
-            unit = unit ?: workoutUnit,
+            unit = weightUnit,
             ratio = r,
             reps = n,
             durationSeconds = t,
@@ -326,10 +317,8 @@ class ExerciseLogViewModel(
         viewModelScope.launch { repository.deleteSet(id) }
     }
 
-    fun setUnit(unit: WeightUnit) {
-        val workoutId = entry?.workout?.id ?: return
-        viewModelScope.launch { repository.setWorkoutUnit(workoutId, unit) }
-    }
+    /** Relabels the weight being entered; the number stays as typed. */
+    fun setUnit(unit: WeightUnit) = edit { weightUnit = unit }
 
     companion object {
         const val RATIO_STEP = 0.25

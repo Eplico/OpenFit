@@ -38,7 +38,7 @@ class WorkoutRepository(
         name: String,
         category: String,
         measure: Measure = Measure.REPS,
-        weightMode: WeightMode = WeightMode.WORKOUT,
+        weightMode: WeightMode = WeightMode.DEFAULT,
     ): Result<Long> = db.withTransaction {
         val cleanName = name.trim()
         if (cleanName.isEmpty()) return@withTransaction Result.failure(IllegalArgumentException("Name can't be empty"))
@@ -131,12 +131,8 @@ class WorkoutRepository(
         }
     }
 
-    suspend fun setWorkoutUnit(date: LocalDate, unit: WeightUnit) {
-        val workout = getOrCreateWorkout(date)
-        workoutDao.setUnit(workout.id, unit)
-    }
-
-    suspend fun setWorkoutUnit(workoutId: Long, unit: WeightUnit) = workoutDao.setUnit(workoutId, unit)
+    /** The unit new sets start in when their exercise doesn't pick one (Settings → Default unit). */
+    suspend fun defaultUnit(): WeightUnit = settings.current().defaultUnit
 
     /** Adds [exerciseId] to the workout on [date] (creating the workout if needed) and returns its entry id. */
     suspend fun addExerciseToWorkout(date: LocalDate, exerciseId: Long): Long {
@@ -243,6 +239,10 @@ class WorkoutRepository(
 
     fun observeHistory(exerciseId: Long): Flow<List<HistorySet>> = setDao.observeHistory(exerciseId)
 
+    /** Total weight moved (calculated weight × reps) across every set ever logged, in [unit]. */
+    fun observeLifetimeVolume(unit: WeightUnit): Flow<Double> =
+        setDao.observeVolumeByUnit().map { totals -> totals.sumOf { it.unit.convert(it.volume, unit) } }
+
     /**
      * Trophies for every set of the given exercises, keyed by set id. Each set is judged against the
      * exercise's earlier sets by calculated weight (weight × ratio, in kg), so it keeps the trophy it
@@ -297,7 +297,6 @@ class WorkoutRepository(
                 if (entries.isEmpty()) return@mapNotNull null
                 BackupWorkout(
                     date = day.workout.date,
-                    unit = day.workout.unit,
                     exercises = entries.map { entry ->
                         BackupWorkoutExercise(entry.exercise.toBackup(), entry.sets.sortedBy { it.position }.map { it.values })
                     },
@@ -352,6 +351,7 @@ class WorkoutRepository(
     }
 
     suspend fun importBackup(backup: Backup, addUnknownCategories: Boolean = true): ImportSummary = db.withTransaction {
+        val newWorkoutUnit = defaultUnit()
         val knownCategories = HashMap<String, String>()
         categoryDao.getAll().forEach { knownCategories[it.name.lowercase()] = it.name }
         var categoriesAdded = 0
@@ -399,7 +399,7 @@ class WorkoutRepository(
         val now = System.currentTimeMillis()
         for (day in backup.workouts) {
             val workout = workoutDao.getByDate(day.date)
-                ?: Workout(date = day.date, unit = day.unit).let { it.copy(id = workoutDao.insert(it)) }
+                ?: Workout(date = day.date, unit = newWorkoutUnit).let { it.copy(id = workoutDao.insert(it)) }
             var nextPosition = workoutDao.maxEntryPosition(workout.id) + 1
             for (item in day.exercises) {
                 if (item.exercise.name.isBlank()) continue

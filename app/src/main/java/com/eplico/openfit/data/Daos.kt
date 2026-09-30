@@ -7,7 +7,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
-import com.eplico.openfit.core.WeightUnit
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 
@@ -97,8 +96,6 @@ interface WorkoutDao {
     @Insert
     suspend fun insert(workout: Workout): Long
 
-    @Query("UPDATE workouts SET unit = :unit WHERE id = :workoutId")
-    suspend fun setUnit(workoutId: Long, unit: WeightUnit)
 
     @Transaction
     @Query("SELECT * FROM workout_exercises WHERE id = :workoutExerciseId")
@@ -158,7 +155,7 @@ interface SetDao {
      */
     @Query(
         """
-        SELECT s.*, w.date AS date, w.unit AS workoutUnit FROM sets s
+        SELECT s.*, w.date AS date FROM sets s
         JOIN workout_exercises we ON s.workoutExerciseId = we.id
         JOIN workouts w ON we.workoutId = w.id
         WHERE we.exerciseId = :exerciseId AND w.date <= :onOrBefore
@@ -170,7 +167,7 @@ interface SetDao {
 
     @Query(
         """
-        SELECT s.*, w.date AS date, w.unit AS workoutUnit FROM sets s
+        SELECT s.*, w.date AS date FROM sets s
         JOIN workout_exercises we ON s.workoutExerciseId = we.id
         JOIN workouts w ON we.workoutId = w.id
         WHERE we.exerciseId = :exerciseId
@@ -178,6 +175,10 @@ interface SetDao {
         """,
     )
     fun observeHistory(exerciseId: Long): Flow<List<HistorySet>>
+
+    /** Total weight moved (calculated weight × reps) over every set, per unit the sets were logged in. */
+    @Query("SELECT unit, SUM(weight * ratio * reps) AS volume FROM sets WHERE weight > 0 AND reps > 0 GROUP BY unit")
+    fun observeVolumeByUnit(): Flow<List<UnitVolume>>
 
     /** Every set of the given rep-based exercises, oldest first, for working out trophies. */
     @Query(

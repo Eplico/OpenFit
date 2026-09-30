@@ -32,7 +32,9 @@ class MigrationTest {
     }
 
     private fun openCurrent(): OpenFitDatabase =
-        Room.databaseBuilder(context, OpenFitDatabase::class.java, name).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        Room.databaseBuilder(context, OpenFitDatabase::class.java, name)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .build()
 
     private fun createVersion1Database(fill: SupportSQLiteDatabase.() -> Unit) {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
@@ -78,7 +80,7 @@ class MigrationTest {
             val exercises = repository.exercises.first()
 
             val squat = exercises.first { it.name == "Barbell Squat" }
-            assertEquals(Measure.REPS to WeightMode.WORKOUT, squat.measure to squat.weightMode)
+            assertEquals(Measure.REPS to WeightMode.DEFAULT, squat.measure to squat.weightMode)
             // New cardio exercises arrive, but not over one the user already had with the same name.
             assertTrue(exercises.any { it.name == "Treadmill" && it.measure == Measure.DISTANCE_TIME && it.weightMode == WeightMode.NONE })
             assertTrue(exercises.any { it.name == "Plank" && it.measure == Measure.TIME })
@@ -116,6 +118,7 @@ class MigrationTest {
             MIGRATION_1_2.migrate(this)
             execSQL("UPDATE exercises SET category = 'Other' WHERE category = 'Biceps'")
             execSQL("DELETE FROM categories WHERE name = 'Biceps'")
+            execSQL("UPDATE exercises SET weightMode = 'LB' WHERE name = 'Barbell Curl'")
             version = 2
         }
 
@@ -132,6 +135,9 @@ class MigrationTest {
             // New curls don't bring back the deleted Biceps category.
             assertEquals("Other", exercises.getValue("Bayesian Curl").category)
             assertTrue(repository.categories.first().none { it.category.name == "Biceps" })
+            // Version 4: "Match workout" becomes "Default unit"; a fixed unit stays.
+            assertEquals(WeightMode.DEFAULT, exercises.getValue("Leg Extension Machine").weightMode)
+            assertEquals(WeightMode.LB, exercises.getValue("Barbell Curl").weightMode)
         } finally {
             db.close()
         }

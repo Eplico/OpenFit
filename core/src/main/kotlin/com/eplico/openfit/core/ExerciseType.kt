@@ -28,19 +28,19 @@ enum class Measure(val label: String) {
     }
 }
 
-/** Whether an exercise tracks weight, and in which unit. */
+/** Whether an exercise tracks weight, and which unit its new sets start in (any set can be switched). */
 enum class WeightMode(val label: String) {
-    /** Follows the workout's kg/lb switch. */
-    WORKOUT("Match workout"),
+    /** Starts in the default unit from Settings. */
+    DEFAULT("Default unit"),
     KG("kg"),
     LB("lb"),
     NONE("No weight");
 
     val tracksWeight: Boolean get() = this != NONE
 
-    /** The unit this exercise's sets are entered and shown in, or null when it has no weight. */
-    fun unitFor(workoutUnit: WeightUnit): WeightUnit? = when (this) {
-        WORKOUT -> workoutUnit
+    /** The unit a new set of this exercise starts in, or null when it has no weight. */
+    fun unitFor(defaultUnit: WeightUnit): WeightUnit? = when (this) {
+        DEFAULT -> defaultUnit
         KG -> WeightUnit.KG
         LB -> WeightUnit.LB
         NONE -> null
@@ -49,7 +49,7 @@ enum class WeightMode(val label: String) {
     companion object {
         fun parse(text: String): WeightMode? = when (text.trim().lowercase()) {
             "" -> null
-            "match workout", "workout", "default" -> WORKOUT
+            "default unit", "default", "match workout", "workout" -> DEFAULT
             "kg", "kgs", "kilograms" -> KG
             "lb", "lbs", "pounds" -> LB
             "none", "no weight", "n/a", "na", "bodyweight" -> NONE

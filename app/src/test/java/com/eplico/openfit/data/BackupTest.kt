@@ -58,7 +58,7 @@ class BackupTest {
     private suspend fun WorkoutRepository.exerciseId(name: String): Long = exercises.first().first { it.name == name }.id
 
     /**
-     * Squat on day 1 (2 sets, day shown in lb), a custom exercise + a planned one on day 2, a run,
+     * Squat on day 1 (2 sets in kg), a custom exercise in lb + a planned one on day 2, a run,
      * a custom category, two presets.
      */
     private suspend fun logSampleData() {
@@ -66,13 +66,10 @@ class BackupTest {
         val belt = source.createExercise("Belt Squat", "Legs").getOrThrow()
         source.createCategory("Mobility").getOrThrow()
         val run = source.addExerciseToWorkout(day1, source.exerciseId("Running"))
-        // A no-weight exercise stores the day's unit (lb here), as the logging screen does.
-        source.setWorkoutUnit(day1, WeightUnit.LB)
-        source.addSet(run, SetValues(0.0, WeightUnit.LB, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))
+        source.addSet(run, SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))
         val e1 = source.addExerciseToWorkout(day1, squat)
         source.addSet(e1, SetValues(100.0, WeightUnit.KG, 1.0, 5))
         source.addSet(e1, SetValues(60.0, WeightUnit.KG, 2.0, 8))
-        source.setWorkoutUnit(day1, WeightUnit.LB)
         val e2 = source.addExerciseToWorkout(day2, belt)
         source.addSet(e2, SetValues(135.0, WeightUnit.LB, 1.0, 10))
         source.addExerciseToWorkout(day2, source.exerciseId("Leg Press"))
@@ -108,7 +105,6 @@ class BackupTest {
             summary,
         )
         assertEquals(source.exportBackup().normalized(), target.exportBackup().normalized())
-        assertEquals(WeightUnit.LB, target.observeDay(day1).first()!!.workout.unit)
 
         // Importing the same file again is harmless.
         val again = target.importBackup(parsed.backup)
@@ -208,7 +204,7 @@ class BackupTest {
         val backup = Backup(
             exercises = listOf(pushdown, BackupExercise("Face Pull", "Back")),
             workouts = listOf(
-                BackupWorkout(day1, WeightUnit.KG, listOf(BackupWorkoutExercise(pushdown, listOf(SetValues(30.0, WeightUnit.KG, reps = 12))))),
+                BackupWorkout(day1, listOf(BackupWorkoutExercise(pushdown, listOf(SetValues(30.0, WeightUnit.KG, reps = 12))))),
             ),
             presets = listOf(BackupPreset("Arms", listOf(pushdown))),
         )

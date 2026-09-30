@@ -67,7 +67,8 @@ class BackupManager(
 
     /** Reads a spreadsheet from [uri] (from an "open document" picker) without changing anything yet. */
     suspend fun prepareImport(uri: Uri): PreparedImport = withContext(Dispatchers.IO) {
-        val parsed = openSpreadsheet(uri).use { BackupSpreadsheet.read(it) }
+        val defaultUnit = repository.defaultUnit()
+        val parsed = openSpreadsheet(uri).use { BackupSpreadsheet.read(it, defaultUnit) }
         PreparedImport(parsed, repository.unknownCategories(parsed.backup))
     }
 

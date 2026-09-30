@@ -139,7 +139,7 @@ fun SettingsScreen(
             SectionTitle("Units")
             ListItem(
                 headlineContent = { Text("Default unit") },
-                supportingContent = { Text("Used for new workouts. You can still switch any single workout between kg and lb.") },
+                supportingContent = { Text("New sets start in this unit. Switch any set between kg and lb while logging it.") },
                 trailingContent = {
                     UnitToggle(
                         unit = settings.defaultUnit,

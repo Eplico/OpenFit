@@ -21,16 +21,16 @@ data class ParsedBackup(
  * Converts a [Backup] to and from an .xlsx workbook with four sheets:
  *
  * - **Sets**: one row per set (Date, Exercise, Category, Set, Weight, Unit, Ratio,
- *   Calculated Weight, Reps, Time, Distance, Distance Unit, Workout Unit). A row with no weight,
- *   reps, time or distance is an exercise that was planned for that day but not logged.
+ *   Calculated Weight, Reps, Time, Distance, Distance Unit). A row with no weight, reps, time or
+ *   distance is an exercise that was planned for that day but not logged.
  * - **Presets**: one row per exercise in a preset (Preset, Order, Exercise, Category).
  * - **Exercises**: the exercise library (Exercise, Category, Measure, Weight).
  * - **Categories**: category names in display order.
  *
  * Reading is lenient so a sheet edited by hand (or written by an older OpenFit) still imports:
  * columns are found by header name in any order, only Date, Exercise and one of Reps/Time/Distance
- * are required, missing exercise types are inferred from the sets, and bad rows are skipped with
- * a warning.
+ * are required, missing exercise types are inferred from the sets, a set without a Unit uses the
+ * default unit, and bad rows are skipped with a warning.
  */
 object BackupSpreadsheet {
     const val SETS = "Sets"
@@ -50,6 +50,7 @@ object BackupSpreadsheet {
     private const val TIME = "Time"
     private const val DISTANCE = "Distance"
     private const val DISTANCE_UNIT = "Distance Unit"
+    /** Written by OpenFit 0.3 and earlier; still read as the unit for sets that don't name one. */
     private const val WORKOUT_UNIT = "Workout Unit"
     private const val PRESET = "Preset"
     private const val ORDER = "Order"
@@ -57,7 +58,9 @@ object BackupSpreadsheet {
 
     fun write(backup: Backup, out: OutputStream) = Xlsx.write(toSheets(backup), out)
 
-    fun read(input: InputStream): ParsedBackup = fromWorkbook(Xlsx.read(input))
+    /** [defaultUnit] is used for weights whose row doesn't say kg or lb. */
+    fun read(input: InputStream, defaultUnit: WeightUnit = WeightUnit.KG): ParsedBackup =
+        fromWorkbook(Xlsx.read(input), defaultUnit)
 
     // ---------------------------------------------------------------- export
 
@@ -70,9 +73,8 @@ object BackupSpreadsheet {
             for (entry in workout.exercises) {
                 val exercise = entry.exercise
                 val leading = listOf(Cell.Date(workout.date), Cell.Text(exercise.name), Cell.Text(exercise.category))
-                val workoutUnit = Cell.Text(workout.unit.label)
                 if (entry.sets.isEmpty()) {
-                    rows += leading + List(9) { Cell.Empty } + workoutUnit
+                    rows += leading + List(9) { Cell.Empty }
                 }
                 entry.sets.forEachIndexed { index, set ->
                     val weight = if (exercise.weightMode.tracksWeight) {
@@ -94,16 +96,15 @@ object BackupSpreadsheet {
                             if (set.durationSeconds > 0) Cell.Text(Durations.format(set.durationSeconds)) else Cell.Empty,
                             if (set.distance > 0.0) Cell.Number(set.distance) else Cell.Empty,
                             if (showDistanceUnit) Cell.Text(set.distanceUnit.label) else Cell.Empty,
-                            workoutUnit,
                         )
                 }
             }
         }
         return Sheet(
             name = SETS,
-            header = listOf(DATE, EXERCISE, CATEGORY, SET, WEIGHT, UNIT, RATIO, CALCULATED, REPS, TIME, DISTANCE, DISTANCE_UNIT, WORKOUT_UNIT),
+            header = listOf(DATE, EXERCISE, CATEGORY, SET, WEIGHT, UNIT, RATIO, CALCULATED, REPS, TIME, DISTANCE, DISTANCE_UNIT),
             rows = rows,
-            columnWidths = listOf(12.0, 30.0, 12.0, 6.0, 9.0, 6.0, 7.0, 18.0, 6.0, 9.0, 10.0, 14.0, 14.0),
+            columnWidths = listOf(12.0, 30.0, 12.0, 6.0, 9.0, 6.0, 7.0, 18.0, 6.0, 9.0, 10.0, 14.0),
         )
     }
 
@@ -148,7 +149,7 @@ object BackupSpreadsheet {
 
     // ---------------------------------------------------------------- import
 
-    fun fromWorkbook(workbook: Map<String, List<List<String>>>): ParsedBackup {
+    fun fromWorkbook(workbook: Map<String, List<List<String>>>, defaultUnit: WeightUnit = WeightUnit.KG): ParsedBackup {
         val warnings = ArrayList<String>()
         val setsRows = workbook.sheetNamed(SETS)
             ?: workbook.values.firstOrNull()?.takeIf { Table(it).has(DATE) && Table(it).has(EXERCISE) }
@@ -178,14 +179,11 @@ object BackupSpreadsheet {
         val resolved = definitions.mapValues { (_, definition) -> definition.resolve() }
 
         val workouts = days.sortedBy { it.date }.map { day ->
-            val dayUnit = day.unit
-                ?: day.exercises.values.flatMap { it.sets }.firstNotNullOfOrNull { it.unit }
-                ?: WeightUnit.KG
+            val fallbackUnit = day.legacyUnit ?: defaultUnit
             BackupWorkout(
                 date = day.date,
-                unit = dayUnit,
                 exercises = day.exercises.map { (key, slot) ->
-                    BackupWorkoutExercise(resolved.getValue(key), slot.sets.map { it.toSetValues(dayUnit) })
+                    BackupWorkoutExercise(resolved.getValue(key), slot.sets.map { it.toSetValues(fallbackUnit) })
                 },
             )
         }
@@ -211,8 +209,8 @@ object BackupSpreadsheet {
         val distance: Double,
         val distanceUnit: DistanceUnit,
     ) {
-        fun toSetValues(dayUnit: WeightUnit) =
-            SetValues(weight, unit ?: dayUnit, ratio, reps, durationSeconds, distance, distanceUnit)
+        fun toSetValues(fallbackUnit: WeightUnit) =
+            SetValues(weight, unit ?: fallbackUnit, ratio, reps, durationSeconds, distance, distanceUnit)
     }
 
     private class PendingExercise(val name: String, var category: String) {
@@ -220,7 +218,8 @@ object BackupSpreadsheet {
     }
 
     private class PendingDay(val date: LocalDate) {
-        var unit: WeightUnit? = null
+        /** The day's "Workout Unit" from an older spreadsheet, if it has one. */
+        var legacyUnit: WeightUnit? = null
         val exercises = LinkedHashMap<String, PendingExercise>()
     }
 
@@ -244,7 +243,7 @@ object BackupSpreadsheet {
             val weightMode = weightMode ?: if (measure != Measure.REPS && sets.none { it.weight > 0.0 }) {
                 WeightMode.NONE
             } else {
-                WeightMode.WORKOUT
+                WeightMode.DEFAULT
             }
             return BackupExercise(name, category, measure, weightMode)
         }
@@ -294,7 +293,7 @@ object BackupSpreadsheet {
                     reps == null -> "reps must be a whole number (got \"$repsText\")"
                     duration == null -> "time must look like 25:30 or 1:02:03 (got \"$timeText\")"
                     distance == null -> "couldn't read the distance \"$distanceText\""
-                    distanceUnit == null -> "distance unit must be km or mi (got \"$distanceUnitText\")"
+                    distanceUnit == null -> "distance unit must be m, km or mi (got \"$distanceUnitText\")"
                     ratio == null -> "ratio must be a number above 0 (got \"$ratioText\")"
                     unitText.isNotEmpty() && unit == null -> "unit must be kg or lb (got \"$unitText\")"
                     reps == 0 && duration == 0 && distance == 0.0 -> "needs reps, a time or a distance"
@@ -310,7 +309,7 @@ object BackupSpreadsheet {
             }
 
             val day = days.getOrPut(date) { PendingDay(date) }
-            if (day.unit == null) day.unit = parseUnit(table.value(row, WORKOUT_UNIT))
+            if (day.legacyUnit == null) day.legacyUnit = parseUnit(table.value(row, WORKOUT_UNIT))
             val slot = day.exercises.getOrPut(name.lowercase()) { PendingExercise(name, "") }
             if (slot.category.isEmpty()) slot.category = table.value(row, CATEGORY)
             if (set != null) slot.sets += set
@@ -333,7 +332,7 @@ object BackupSpreadsheet {
                 warnings += "$EXERCISES row $rowNumber: unknown measure \"$measureText\" (use Reps, Time, Distance or Distance + time)"
             }
             if (weightText.isNotEmpty() && weightMode == null) {
-                warnings += "$EXERCISES row $rowNumber: unknown weight setting \"$weightText\" (use Match workout, kg, lb or No weight)"
+                warnings += "$EXERCISES row $rowNumber: unknown weight setting \"$weightText\" (use Default unit, kg, lb or No weight)"
             }
             Definition(name, table.value(row, CATEGORY), measure, weightMode)
         }.distinctBy { it.name.lowercase() }

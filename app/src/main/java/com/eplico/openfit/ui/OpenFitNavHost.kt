@@ -1,6 +1,9 @@
 package com.eplico.openfit.ui
 
 import android.net.Uri
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -80,6 +83,8 @@ private fun NavController.openTab(route: String) {
     }
 }
 
+private const val SCREEN_FADE_MILLIS = 150
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OpenFitNavHost() {
@@ -119,6 +124,9 @@ fun OpenFitNavHost() {
         NavHost(
             navController = navController,
             startDestination = Routes.WORKOUT,
+            // A quick fade between screens (the library default is a slow 700 ms cross-fade).
+            enterTransition = { fadeIn(tween(SCREEN_FADE_MILLIS)) },
+            exitTransition = { fadeOut(tween(SCREEN_FADE_MILLIS)) },
             modifier = Modifier
                 .padding(padding)
                 .consumeWindowInsets(padding),

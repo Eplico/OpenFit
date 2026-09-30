@@ -3,6 +3,7 @@ package com.eplico.openfit
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,8 +62,14 @@ class AppSmokeTest {
         val plusButtons = compose.onAllNodesWithText("+")
         plusButtons[0].performScrollTo().performClick() // weight
         plusButtons[2].performScrollTo().performClick() // reps
+        // Switching kg/lb relabels the number that's there; it doesn't convert it.
+        val weightField = compose.onAllNodes(hasSetTextAction())[0]
+        val typed = weightField.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        compose.onNodeWithText("kg").performClick()
+        compose.onNodeWithText("lb").performClick()
+        assertEquals(typed, weightField.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithText("Save set").performScrollTo().performClick()
-        waitFor(hasText("× 1 rep", substring = true))
+        waitFor(hasText("$typed lb × 1 rep"))
         // The first set of an exercise is its heaviest yet.
         waitFor(hasContentDescription("Gold trophy", substring = true))
 
@@ -76,6 +84,7 @@ class AppSmokeTest {
         waitFor(hasText("This year"))
         compose.onNodeWithText("Lifetime").performClick()
         waitFor(hasText("All time"))
+        waitFor(hasText("Total weight moved", substring = true))
 
         compose.onNodeWithText("Presets").performClick()
         waitFor(hasText("No presets yet"))
