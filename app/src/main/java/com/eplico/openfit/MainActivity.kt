@@ -17,4 +17,9 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        (application as OpenFitApp).container.onForeground()
+    }
 }

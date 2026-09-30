@@ -24,6 +24,19 @@ class AppContainer(context: Context) {
     val settings = SettingsRepository(context)
     val repository = WorkoutRepository(database, settings)
 
+    private var today = LocalDate.now()
+
     /** The day shown on the Workout tab; the calendar and presets tabs move it. */
-    val selectedDate = MutableStateFlow(LocalDate.now())
+    val selectedDate = MutableStateFlow(today)
+
+    /**
+     * Called when the app comes back to the foreground. If the date rolled over while the
+     * app sat in memory and the user was looking at "today", follow along to the new day.
+     */
+    fun onForeground() {
+        val now = LocalDate.now()
+        if (now == today) return
+        if (selectedDate.value == today) selectedDate.value = now
+        today = now
+    }
 }

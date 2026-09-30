@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 class ExerciseLogViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: WorkoutRepository,
-    settings: SettingsRepository,
+    settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val entryId: Long = checkNotNull(savedStateHandle.get<Long>("workoutExerciseId"))
@@ -45,7 +45,7 @@ class ExerciseLogViewModel(
         private set
 
     val settings: StateFlow<UserSettings> =
-        settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, UserSettings())
+        settingsRepository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, UserSettings())
 
     val history: StateFlow<List<HistorySet>> = repository.observeEntry(entryId)
         .map { it?.exercise?.id }
