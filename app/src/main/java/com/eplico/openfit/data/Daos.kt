@@ -19,6 +19,9 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercises WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun findByName(name: String): Exercise?
 
+    @Query("SELECT * FROM exercises")
+    suspend fun getAll(): List<Exercise>
+
     @Insert
     suspend fun insert(exercise: Exercise): Long
 
@@ -37,6 +40,10 @@ interface WorkoutDao {
     @Transaction
     @Query("SELECT * FROM workouts WHERE date = :date LIMIT 1")
     fun observeDay(date: LocalDate): Flow<WorkoutWithEntries?>
+
+    @Transaction
+    @Query("SELECT * FROM workouts ORDER BY date")
+    suspend fun getAllWithEntries(): List<WorkoutWithEntries>
 
     @Insert
     suspend fun insert(workout: Workout): Long
@@ -93,6 +100,9 @@ interface SetDao {
     @Query("DELETE FROM sets WHERE id = :setId")
     suspend fun delete(setId: Long)
 
+    @Query("SELECT COUNT(*) FROM sets WHERE workoutExerciseId = :workoutExerciseId")
+    suspend fun countFor(workoutExerciseId: Long): Int
+
     /**
      * The most recent set of [exerciseId] logged on or before [onOrBefore]
      * (later days first, then the last set within that day).
@@ -134,6 +144,13 @@ interface PresetDao {
     @Transaction
     @Query("SELECT * FROM presets WHERE id = :presetId")
     suspend fun get(presetId: Long): PresetWithItems?
+
+    @Transaction
+    @Query("SELECT * FROM presets ORDER BY name COLLATE NOCASE")
+    suspend fun getAll(): List<PresetWithItems>
+
+    @Query("SELECT * FROM presets WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): Preset?
 
     @Insert
     suspend fun insert(preset: Preset): Long

@@ -74,5 +74,7 @@ class AppSmokeTest {
 
         compose.onNodeWithText("Settings").performClick()
         waitFor(hasText("Default unit"))
+        waitFor(hasText("Save spreadsheet"))
+        waitFor(hasText("Import spreadsheet"))
     }
 }

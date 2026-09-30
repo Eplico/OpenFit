@@ -2,6 +2,7 @@ package com.eplico.openfit
 
 import android.app.Application
 import android.content.Context
+import com.eplico.openfit.data.BackupManager
 import com.eplico.openfit.data.OpenFitDatabase
 import com.eplico.openfit.data.SettingsRepository
 import com.eplico.openfit.data.WorkoutRepository
@@ -23,6 +24,7 @@ class AppContainer(context: Context) {
     private val database = OpenFitDatabase.build(context)
     val settings = SettingsRepository(context)
     val repository = WorkoutRepository(database, settings)
+    val backups = BackupManager(context, repository)
 
     private var today = LocalDate.now()
 

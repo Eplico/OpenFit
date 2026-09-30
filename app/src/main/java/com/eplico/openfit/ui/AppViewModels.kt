@@ -41,7 +41,8 @@ object AppViewModels {
             CalendarViewModel(c.repository, c.settings, c.selectedDate)
         }
         initializer {
-            SettingsViewModel(container().settings)
+            val c = container()
+            SettingsViewModel(c.settings, c.backups)
         }
     }
 

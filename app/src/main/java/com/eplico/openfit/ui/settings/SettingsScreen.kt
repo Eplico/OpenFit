@@ -18,47 +18,26 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eplico.openfit.core.WeightMath
 import com.eplico.openfit.core.WeightUnit
-import com.eplico.openfit.data.SettingsRepository
-import com.eplico.openfit.data.UserSettings
 import com.eplico.openfit.ui.AppViewModels
 import com.eplico.openfit.ui.common.UnitToggle
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import java.time.DayOfWeek
-
-class SettingsViewModel(private val repository: SettingsRepository) : ViewModel() {
-    val settings: StateFlow<UserSettings?> =
-        repository.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    fun setDefaultUnit(unit: WeightUnit) {
-        viewModelScope.launch { repository.setDefaultUnit(unit) }
-    }
-
-    fun setWeekStart(day: DayOfWeek) {
-        viewModelScope.launch { repository.setWeekStart(day) }
-    }
-
-    fun setIncrement(unit: WeightUnit, value: Double) {
-        viewModelScope.launch { repository.setIncrement(unit, value) }
-    }
-}
 
 private val incrementOptions = mapOf(
     WeightUnit.KG to listOf(0.5, 1.0, 1.25, 2.5, 5.0),
@@ -68,7 +47,18 @@ private val incrementOptions = mapOf(
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = AppViewModels.Factory)) {
     val loaded by viewModel.settings.collectAsStateWithLifecycle()
-    Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
+    val snackbar = remember { SnackbarHostState() }
+    val message = viewModel.message
+    LaunchedEffect(message) {
+        if (message != null) {
+            snackbar.showSnackbar(message)
+            viewModel.messageShown()
+        }
+    }
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Settings") }) },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
         val settings = loaded ?: return@Scaffold
         Column(
             Modifier
@@ -125,6 +115,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel(factory = AppViewMod
                     }
                 },
             )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle("Backup & spreadsheet")
+            BackupSection(viewModel)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("About ratios")

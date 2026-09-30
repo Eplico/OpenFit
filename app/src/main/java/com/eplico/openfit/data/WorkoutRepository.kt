@@ -3,6 +3,11 @@ package com.eplico.openfit.data
 import androidx.room.withTransaction
 import com.eplico.openfit.core.SetValues
 import com.eplico.openfit.core.WeightUnit
+import com.eplico.openfit.core.backup.Backup
+import com.eplico.openfit.core.backup.BackupExercise
+import com.eplico.openfit.core.backup.BackupPreset
+import com.eplico.openfit.core.backup.BackupWorkout
+import com.eplico.openfit.core.backup.BackupWorkoutExercise
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
@@ -183,6 +188,116 @@ class WorkoutRepository(
             ordered.forEachIndexed { index, id -> presetDao.setItemPosition(id, index) }
         }
     }
+
+    // ---- Export / import ----
+
+    /** A consistent snapshot of everything in the database. */
+    suspend fun exportBackup(): Backup = db.withTransaction {
+        Backup(
+            exercises = exerciseDao.getAll().map { it.toBackup() },
+            workouts = workoutDao.getAllWithEntries().mapNotNull { day ->
+                val entries = day.entries.sortedBy { it.entry.position }
+                if (entries.isEmpty()) return@mapNotNull null
+                BackupWorkout(
+                    date = day.workout.date,
+                    unit = day.workout.unit,
+                    exercises = entries.map { entry ->
+                        BackupWorkoutExercise(entry.exercise.toBackup(), entry.sets.sortedBy { it.position }.map { it.values })
+                    },
+                )
+            },
+            presets = presetDao.getAll().map { preset ->
+                BackupPreset(preset.preset.name, preset.orderedItems.map { it.exercise.toBackup() })
+            },
+        )
+    }
+
+    /**
+     * Merges [backup] into the database without deleting anything, so importing the same file twice
+     * is harmless. Exercises and presets are matched by name (ignoring case). For each exercise on
+     * each day, sets are only added if the app has no sets logged for it yet.
+     */
+    suspend fun importBackup(backup: Backup): ImportSummary = db.withTransaction {
+        val exerciseIds = HashMap<String, Long>()
+        exerciseDao.getAll().forEach { exerciseIds[it.name.lowercase()] = it.id }
+        var exercisesAdded = 0
+
+        suspend fun exerciseId(exercise: BackupExercise): Long {
+            val name = exercise.name.trim()
+            exerciseIds[name.lowercase()]?.let { return it }
+            val id = exerciseDao.insert(Exercise(name = name, category = exercise.category.trim().ifEmpty { "Other" }))
+            exerciseIds[name.lowercase()] = id
+            exercisesAdded++
+            return id
+        }
+
+        backup.exercises.filter { it.name.isNotBlank() }.forEach { exerciseId(it) }
+
+        var setsAdded = 0
+        var skipped = 0
+        val daysWithNewSets = HashSet<LocalDate>()
+        val now = System.currentTimeMillis()
+        for (day in backup.workouts) {
+            val workout = workoutDao.getByDate(day.date)
+                ?: Workout(date = day.date, unit = day.unit).let { it.copy(id = workoutDao.insert(it)) }
+            var nextPosition = workoutDao.maxEntryPosition(workout.id) + 1
+            for (item in day.exercises) {
+                if (item.exercise.name.isBlank()) continue
+                val exId = exerciseId(item.exercise)
+                val entryId = workoutDao.findEntry(workout.id, exId)?.id
+                    ?: workoutDao.insertEntry(WorkoutExercise(workoutId = workout.id, exerciseId = exId, position = nextPosition++))
+                if (item.sets.isEmpty()) continue
+                if (setDao.countFor(entryId) > 0) {
+                    skipped++
+                    continue
+                }
+                item.sets.forEachIndexed { index, set ->
+                    setDao.insert(
+                        SetEntry(
+                            workoutExerciseId = entryId,
+                            weight = set.weight,
+                            unit = set.unit,
+                            ratio = set.ratio,
+                            reps = set.reps,
+                            position = index,
+                            loggedAt = now,
+                        ),
+                    )
+                }
+                setsAdded += item.sets.size
+                daysWithNewSets += day.date
+            }
+        }
+
+        var presetsAdded = 0
+        var presetsSkipped = 0
+        for (preset in backup.presets) {
+            val name = preset.name.trim()
+            if (name.isEmpty()) continue
+            if (presetDao.findByName(name) != null) {
+                presetsSkipped++
+                continue
+            }
+            val presetId = presetDao.insert(Preset(name = name))
+            presetDao.insertItems(
+                preset.exercises.filter { it.name.isNotBlank() }.mapIndexed { index, exercise ->
+                    PresetExercise(presetId = presetId, exerciseId = exerciseId(exercise), position = index)
+                },
+            )
+            presetsAdded++
+        }
+
+        ImportSummary(
+            setsAdded = setsAdded,
+            daysWithNewSets = daysWithNewSets.size,
+            exercisesAdded = exercisesAdded,
+            presetsAdded = presetsAdded,
+            presetsSkipped = presetsSkipped,
+            exerciseDaysSkipped = skipped,
+        )
+    }
+
+    private fun Exercise.toBackup() = BackupExercise(name = name, category = category)
 
     private fun reorder(ids: MutableList<Long>, id: Long, delta: Int): Boolean {
         val from = ids.indexOf(id)
