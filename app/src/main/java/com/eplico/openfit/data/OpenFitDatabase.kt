@@ -31,6 +31,12 @@ abstract class OpenFitDatabase : RoomDatabase() {
             Room.databaseBuilder(context, OpenFitDatabase::class.java, "openfit.db")
                 .addCallback(SeedCallback)
                 .build()
+
+        /** Same schema and starter exercises, kept in memory (for tests). */
+        fun inMemory(context: Context): OpenFitDatabase =
+            Room.inMemoryDatabaseBuilder(context, OpenFitDatabase::class.java)
+                .addCallback(SeedCallback)
+                .build()
     }
 }
 
