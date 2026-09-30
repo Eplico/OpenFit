@@ -49,6 +49,8 @@ android {
 }
 
 tasks.withType<Test>().configureEach {
+    // Robolectric + Compose tests share one JVM; the default 512 MB heap runs out as the suite grows.
+    maxHeapSize = "2g"
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
