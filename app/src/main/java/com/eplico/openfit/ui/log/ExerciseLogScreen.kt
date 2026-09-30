@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.eplico.openfit.ui.log
 
@@ -6,8 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -194,16 +192,16 @@ private fun EntryCard(viewModel: ExerciseLogViewModel, unit: WeightUnit) {
                 onDecrement = { viewModel.stepRatio(-1) },
                 onIncrement = { viewModel.stepRatio(1) },
                 isError = viewModel.ratio == null,
+                labelActions = {
+                    ExerciseLogViewModel.QUICK_RATIOS.forEach { quick ->
+                        FilterChip(
+                            selected = viewModel.ratio == quick,
+                            onClick = { viewModel.setRatio(quick) },
+                            label = { Text("${WeightMath.format(quick)}×") },
+                        )
+                    }
+                },
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExerciseLogViewModel.QUICK_RATIOS.forEach { quick ->
-                    FilterChip(
-                        selected = viewModel.ratio == quick,
-                        onClick = { viewModel.setRatio(quick) },
-                        label = { Text("${WeightMath.format(quick)}×") },
-                    )
-                }
-            }
 
             CalculatedWeight(viewModel.calculatedWeight, viewModel.ratio, unit)
 

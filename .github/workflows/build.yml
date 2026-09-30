@@ -21,6 +21,15 @@ jobs:
       - name: Unit tests
         run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
 
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests
+            core/build/reports/tests
+
       - name: Build APKs
         run: ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
 
