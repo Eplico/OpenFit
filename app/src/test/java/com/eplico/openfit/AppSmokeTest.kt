@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -15,12 +16,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 
 /** Drives the real app end to end: add an exercise, log a set, then visit every tab. */
 @OptIn(ExperimentalTestApi::class)
@@ -40,6 +43,7 @@ class AppSmokeTest {
     }
 
     @Test
+    @Config(qualifiers = PHONE)
     fun logASetAndVisitEveryTab() {
         waitFor(hasText("Nothing logged for this day"))
         compose.onAllNodesWithText("Add exercise").onFirst().performClick()
@@ -86,6 +90,7 @@ class AppSmokeTest {
     }
 
     @Test
+    @Config(qualifiers = PHONE)
     fun logARunThenCreateAnExerciseOnTheNewExercisePage() {
         waitFor(hasText("Nothing logged for this day"))
         compose.onAllNodesWithText("Add exercise").onFirst().performClick()
@@ -127,19 +132,40 @@ class AppSmokeTest {
         compose.onAllNodesWithText("Weight", substring = true).assertCountEquals(0)
     }
 
+    /** Runs on Robolectric's default small screen because it opens a dialog with a text field (see robolectric.properties). */
     @Test
     fun manageCategoriesFromSettings() {
         waitFor(hasText("Nothing logged for this day"))
         compose.onNodeWithText("Settings").performClick()
         waitFor(hasText("Categories"))
         compose.onNodeWithText("Categories").performScrollTo().performClick()
-        waitFor(hasText("Cardio"))
-        waitFor(hasText("where exercises go when their category is deleted", substring = true))
+        waitFor(hasText("Chest"))
+        scrollListTo(hasText("Cardio"))
+        scrollListTo(hasText("where exercises go when their category is deleted", substring = true))
 
         compose.onNodeWithContentDescription("New category").performClick()
         waitFor(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Mobility")
         compose.onNodeWithText("Create").performClick()
-        waitFor(hasText("Mobility"))
+        scrollListTo(hasText("Mobility"))
+    }
+
+    /** Scrolls the screen's list until [matcher] is shown, retrying while the database catches up. */
+    private fun scrollListTo(matcher: SemanticsMatcher) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (true) {
+            try {
+                compose.onNode(hasScrollAction()).performScrollToNode(matcher)
+                return
+            } catch (e: AssertionError) {
+                if (System.currentTimeMillis() > deadline) throw e
+                Thread.sleep(50)
+            }
+        }
+    }
+
+    private companion object {
+        /** A typical phone screen; Robolectric defaults to a small 320x470dp one. */
+        const val PHONE = "w411dp-h914dp-xxhdpi"
     }
 }
