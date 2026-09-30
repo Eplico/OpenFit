@@ -13,8 +13,21 @@ import java.time.LocalDate
 
 @Dao
 interface ExerciseDao {
-    @Query("SELECT * FROM exercises ORDER BY category COLLATE NOCASE, name COLLATE NOCASE")
+    /** Grouped the way the picker shows them: by category order, then name. */
+    @Query(
+        """
+        SELECT e.* FROM exercises e
+        LEFT JOIN categories c ON c.name = e.category COLLATE NOCASE
+        ORDER BY COALESCE(c.position, 1000000), e.category COLLATE NOCASE, e.name COLLATE NOCASE
+        """,
+    )
     fun observeAll(): Flow<List<Exercise>>
+
+    @Query("SELECT * FROM exercises WHERE id = :id")
+    suspend fun get(id: Long): Exercise?
+
+    @Query("UPDATE exercises SET category = :newName WHERE category = :oldName COLLATE NOCASE")
+    suspend fun moveCategory(oldName: String, newName: String)
 
     @Query("SELECT * FROM exercises WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun findByName(name: String): Exercise?
@@ -30,6 +43,42 @@ interface ExerciseDao {
 
     @Delete
     suspend fun delete(exercise: Exercise)
+}
+
+@Dao
+interface CategoryDao {
+    @Query(
+        """
+        SELECT c.*, (SELECT COUNT(*) FROM exercises e WHERE e.category = c.name COLLATE NOCASE) AS exerciseCount
+        FROM categories c
+        ORDER BY c.position, c.name COLLATE NOCASE
+        """,
+    )
+    fun observeWithCounts(): Flow<List<CategoryWithCount>>
+
+    @Query("SELECT * FROM categories ORDER BY position, name COLLATE NOCASE")
+    suspend fun getAll(): List<Category>
+
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun get(id: Long): Category?
+
+    @Query("SELECT * FROM categories WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun findByName(name: String): Category?
+
+    @Query("SELECT COALESCE(MAX(position), -1) FROM categories")
+    suspend fun maxPosition(): Int
+
+    @Insert
+    suspend fun insert(category: Category): Long
+
+    @Query("UPDATE categories SET name = :name WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    @Query("UPDATE categories SET position = :position WHERE id = :id")
+    suspend fun setPosition(id: Long, position: Int)
+
+    @Query("DELETE FROM categories WHERE id = :id")
+    suspend fun delete(id: Long)
 }
 
 @Dao

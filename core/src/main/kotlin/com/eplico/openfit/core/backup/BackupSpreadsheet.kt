@@ -1,7 +1,11 @@
 package com.eplico.openfit.core.backup
 
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Durations
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
 import com.eplico.openfit.core.WeightMath
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import java.io.InputStream
 import java.io.OutputStream
@@ -14,21 +18,25 @@ data class ParsedBackup(
 )
 
 /**
- * Converts a [Backup] to and from an .xlsx workbook with three sheets:
+ * Converts a [Backup] to and from an .xlsx workbook with four sheets:
  *
  * - **Sets**: one row per set (Date, Exercise, Category, Set, Weight, Unit, Ratio,
- *   Calculated Weight, Reps, Workout Unit). A row with no weight and no reps is an exercise that
- *   was planned for that day but not logged.
+ *   Calculated Weight, Reps, Time, Distance, Distance Unit, Workout Unit). A row with no weight,
+ *   reps, time or distance is an exercise that was planned for that day but not logged.
  * - **Presets**: one row per exercise in a preset (Preset, Order, Exercise, Category).
- * - **Exercises**: the exercise library (Exercise, Category).
+ * - **Exercises**: the exercise library (Exercise, Category, Measure, Weight).
+ * - **Categories**: category names in display order.
  *
- * Reading is lenient so a sheet edited by hand still imports: columns are found by header name in
- * any order, only Date/Exercise/Weight/Reps are required, and bad rows are skipped with a warning.
+ * Reading is lenient so a sheet edited by hand (or written by an older OpenFit) still imports:
+ * columns are found by header name in any order, only Date, Exercise and one of Reps/Time/Distance
+ * are required, missing exercise types are inferred from the sets, and bad rows are skipped with
+ * a warning.
  */
 object BackupSpreadsheet {
     const val SETS = "Sets"
     const val PRESETS = "Presets"
     const val EXERCISES = "Exercises"
+    const val CATEGORIES = "Categories"
 
     private const val DATE = "Date"
     private const val EXERCISE = "Exercise"
@@ -39,9 +47,13 @@ object BackupSpreadsheet {
     private const val RATIO = "Ratio"
     private const val CALCULATED = "Calculated Weight"
     private const val REPS = "Reps"
+    private const val TIME = "Time"
+    private const val DISTANCE = "Distance"
+    private const val DISTANCE_UNIT = "Distance Unit"
     private const val WORKOUT_UNIT = "Workout Unit"
     private const val PRESET = "Preset"
     private const val ORDER = "Order"
+    private const val MEASURE = "Measure"
 
     fun write(backup: Backup, out: OutputStream) = Xlsx.write(toSheets(backup), out)
 
@@ -49,43 +61,49 @@ object BackupSpreadsheet {
 
     // ---------------------------------------------------------------- export
 
-    fun toSheets(backup: Backup): List<Sheet> = listOf(setsSheet(backup), presetsSheet(backup), exercisesSheet(backup))
+    fun toSheets(backup: Backup): List<Sheet> =
+        listOf(setsSheet(backup), presetsSheet(backup), exercisesSheet(backup), categoriesSheet(backup))
 
     private fun setsSheet(backup: Backup): Sheet {
         val rows = ArrayList<List<Cell>>()
         for (workout in backup.workouts.sortedBy { it.date }) {
             for (entry in workout.exercises) {
-                val name = Cell.Text(entry.exercise.name)
-                val category = Cell.Text(entry.exercise.category)
+                val exercise = entry.exercise
+                val leading = listOf(Cell.Date(workout.date), Cell.Text(exercise.name), Cell.Text(exercise.category))
                 val workoutUnit = Cell.Text(workout.unit.label)
                 if (entry.sets.isEmpty()) {
-                    rows += listOf(
-                        Cell.Date(workout.date), name, category,
-                        Cell.Empty, Cell.Empty, Cell.Empty, Cell.Empty, Cell.Empty, Cell.Empty,
-                        workoutUnit,
-                    )
+                    rows += leading + List(9) { Cell.Empty } + workoutUnit
                 }
                 entry.sets.forEachIndexed { index, set ->
-                    rows += listOf(
-                        Cell.Date(workout.date),
-                        name,
-                        category,
-                        Cell.Number((index + 1).toDouble()),
-                        Cell.Number(set.weight),
-                        Cell.Text(set.unit.label),
-                        Cell.Number(set.ratio),
-                        Cell.Number(WeightMath.round(set.calculatedWeight, 3)),
-                        Cell.Number(set.reps.toDouble()),
-                        workoutUnit,
-                    )
+                    val weight = if (exercise.weightMode.tracksWeight) {
+                        listOf(
+                            Cell.Number(set.weight),
+                            Cell.Text(set.unit.label),
+                            Cell.Number(set.ratio),
+                            Cell.Number(WeightMath.round(set.calculatedWeight, 3)),
+                        )
+                    } else {
+                        List(4) { Cell.Empty }
+                    }
+                    val showDistanceUnit = set.distance > 0.0 || exercise.measure.usesDistance
+                    rows += leading +
+                        Cell.Number((index + 1).toDouble()) +
+                        weight +
+                        listOf(
+                            if (set.reps > 0) Cell.Number(set.reps.toDouble()) else Cell.Empty,
+                            if (set.durationSeconds > 0) Cell.Text(Durations.format(set.durationSeconds)) else Cell.Empty,
+                            if (set.distance > 0.0) Cell.Number(set.distance) else Cell.Empty,
+                            if (showDistanceUnit) Cell.Text(set.distanceUnit.label) else Cell.Empty,
+                            workoutUnit,
+                        )
                 }
             }
         }
         return Sheet(
             name = SETS,
-            header = listOf(DATE, EXERCISE, CATEGORY, SET, WEIGHT, UNIT, RATIO, CALCULATED, REPS, WORKOUT_UNIT),
+            header = listOf(DATE, EXERCISE, CATEGORY, SET, WEIGHT, UNIT, RATIO, CALCULATED, REPS, TIME, DISTANCE, DISTANCE_UNIT, WORKOUT_UNIT),
             rows = rows,
-            columnWidths = listOf(12.0, 30.0, 12.0, 6.0, 9.0, 6.0, 7.0, 18.0, 6.0, 14.0),
+            columnWidths = listOf(12.0, 30.0, 12.0, 6.0, 9.0, 6.0, 7.0, 18.0, 6.0, 9.0, 10.0, 14.0, 14.0),
         )
     }
 
@@ -114,11 +132,18 @@ object BackupSpreadsheet {
 
     private fun exercisesSheet(backup: Backup): Sheet = Sheet(
         name = EXERCISES,
-        header = listOf(EXERCISE, CATEGORY),
+        header = listOf(EXERCISE, CATEGORY, MEASURE, WEIGHT),
         rows = backup.exercises
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, BackupExercise::category).thenBy(String.CASE_INSENSITIVE_ORDER, BackupExercise::name))
-            .map { listOf(Cell.Text(it.name), Cell.Text(it.category)) },
-        columnWidths = listOf(30.0, 12.0),
+            .map { listOf(Cell.Text(it.name), Cell.Text(it.category), Cell.Text(it.measure.label), Cell.Text(it.weightMode.label)) },
+        columnWidths = listOf(30.0, 12.0, 16.0, 14.0),
+    )
+
+    private fun categoriesSheet(backup: Backup): Sheet = Sheet(
+        name = CATEGORIES,
+        header = listOf(CATEGORY),
+        rows = backup.categories.map { listOf(Cell.Text(it)) },
+        columnWidths = listOf(20.0),
     )
 
     // ---------------------------------------------------------------- import
@@ -127,28 +152,112 @@ object BackupSpreadsheet {
         val warnings = ArrayList<String>()
         val setsRows = workbook.sheetNamed(SETS)
             ?: workbook.values.firstOrNull()?.takeIf { Table(it).has(DATE) && Table(it).has(EXERCISE) }
-            ?: throw SpreadsheetFormatException("Couldn't find a \"$SETS\" sheet with $DATE, $EXERCISE, $WEIGHT and $REPS columns")
+            ?: throw SpreadsheetFormatException("Couldn't find a \"$SETS\" sheet with $DATE and $EXERCISE columns")
 
-        val workouts = parseSets(Table(setsRows), warnings)
-        val exercises = workbook.sheetNamed(EXERCISES)?.let { parseExercises(Table(it), warnings) }.orEmpty()
+        val days = parseSets(Table(setsRows), warnings)
+        val sheetExercises = workbook.sheetNamed(EXERCISES)?.let { parseExercises(Table(it), warnings) }.orEmpty()
         val presets = workbook.sheetNamed(PRESETS)?.let { parsePresets(Table(it), warnings) }.orEmpty()
-        return ParsedBackup(Backup(exercises = exercises, workouts = workouts, presets = presets), warnings)
+        val categories = workbook.sheetNamed(CATEGORIES)?.let { parseCategories(Table(it)) }.orEmpty()
+
+        // One definition per exercise name, from the Exercises sheet first, then the other sheets.
+        val definitions = LinkedHashMap<String, Definition>()
+        sheetExercises.forEach { definitions.putIfAbsent(it.name.lowercase(), it) }
+        for (day in days) {
+            for ((key, slot) in day.exercises) {
+                val definition = definitions.getOrPut(key) { Definition(slot.name, slot.category) }
+                if (definition.category.isEmpty()) definition.category = slot.category
+                definition.sets += slot.sets
+            }
+        }
+        for (preset in presets) {
+            for (item in preset.items) {
+                val definition = definitions.getOrPut(item.name.lowercase()) { Definition(item.name, item.category) }
+                if (definition.category.isEmpty()) definition.category = item.category
+            }
+        }
+        val resolved = definitions.mapValues { (_, definition) -> definition.resolve() }
+
+        val workouts = days.sortedBy { it.date }.map { day ->
+            val dayUnit = day.unit
+                ?: day.exercises.values.flatMap { it.sets }.firstNotNullOfOrNull { it.unit }
+                ?: WeightUnit.KG
+            BackupWorkout(
+                date = day.date,
+                unit = dayUnit,
+                exercises = day.exercises.map { (key, slot) ->
+                    BackupWorkoutExercise(resolved.getValue(key), slot.sets.map { it.toSetValues(dayUnit) })
+                },
+            )
+        }
+        return ParsedBackup(
+            backup = Backup(
+                exercises = resolved.values.toList(),
+                workouts = workouts,
+                presets = presets.map { preset ->
+                    BackupPreset(preset.name, preset.items.map { resolved.getValue(it.name.lowercase()) })
+                },
+                categories = categories,
+            ),
+            warnings = warnings,
+        )
     }
 
-    private class PendingSet(val weight: Double, val unit: WeightUnit?, val ratio: Double, val reps: Int)
+    private class PendingSet(
+        val weight: Double,
+        val unit: WeightUnit?,
+        val ratio: Double,
+        val reps: Int,
+        val durationSeconds: Int,
+        val distance: Double,
+        val distanceUnit: DistanceUnit,
+    ) {
+        fun toSetValues(dayUnit: WeightUnit) =
+            SetValues(weight, unit ?: dayUnit, ratio, reps, durationSeconds, distance, distanceUnit)
+    }
+
+    private class PendingExercise(val name: String, var category: String) {
+        val sets = ArrayList<PendingSet>()
+    }
 
     private class PendingDay(val date: LocalDate) {
         var unit: WeightUnit? = null
-        val exercises = LinkedHashMap<String, Pair<String, MutableList<PendingSet>>>()
+        val exercises = LinkedHashMap<String, PendingExercise>()
     }
 
-    private fun parseSets(table: Table, warnings: MutableList<String>): List<BackupWorkout> {
-        val missing = listOf(DATE, EXERCISE, WEIGHT, REPS).filterNot { table.has(it) }
-        if (missing.isNotEmpty()) {
-            throw SpreadsheetFormatException("The $SETS sheet is missing these columns: ${missing.joinToString()}")
+    private class Definition(
+        val name: String,
+        var category: String,
+        val measure: Measure? = null,
+        val weightMode: WeightMode? = null,
+    ) {
+        val sets = ArrayList<PendingSet>()
+
+        /** Fills in a missing measure/weight setting from what the sets actually recorded. */
+        fun resolve(): BackupExercise {
+            val measure = measure ?: when {
+                sets.any { it.reps > 0 } -> Measure.REPS
+                sets.any { it.distance > 0.0 } && sets.any { it.durationSeconds > 0 } -> Measure.DISTANCE_TIME
+                sets.any { it.distance > 0.0 } -> Measure.DISTANCE
+                sets.any { it.durationSeconds > 0 } -> Measure.TIME
+                else -> Measure.REPS
+            }
+            val weightMode = weightMode ?: if (measure != Measure.REPS && sets.none { it.weight > 0.0 }) {
+                WeightMode.NONE
+            } else {
+                WeightMode.WORKOUT
+            }
+            return BackupExercise(name, category, measure, weightMode)
+        }
+    }
+
+    private fun parseSets(table: Table, warnings: MutableList<String>): List<PendingDay> {
+        val missing = listOf(DATE, EXERCISE).filterNot { table.has(it) }
+        if (missing.isNotEmpty() || listOf(REPS, TIME, DISTANCE).none { table.has(it) }) {
+            throw SpreadsheetFormatException(
+                "The $SETS sheet needs $DATE and $EXERCISE columns, plus at least one of $REPS, $TIME or $DISTANCE",
+            )
         }
         val days = LinkedHashMap<LocalDate, PendingDay>()
-        val categories = HashMap<String, String>()
 
         for ((rowNumber, row) in table.dataRows) {
             val dateText = table.value(row, DATE)
@@ -162,73 +271,82 @@ object BackupSpreadsheet {
                 warnings += "$SETS row $rowNumber: no exercise name"
                 continue
             }
-            val key = name.lowercase()
-            table.value(row, CATEGORY).takeIf { it.isNotEmpty() }?.let { categories.putIfAbsent(key, it) }
 
             val weightText = table.value(row, WEIGHT)
             val repsText = table.value(row, REPS)
-            val set = if (weightText.isEmpty() && repsText.isEmpty()) {
+            val timeText = table.value(row, TIME)
+            val distanceText = table.value(row, DISTANCE)
+            val set = if (listOf(weightText, repsText, timeText, distanceText).all { it.isEmpty() }) {
                 null // planned but not logged
             } else {
                 val weight = if (weightText.isEmpty()) 0.0 else WeightMath.parse(weightText)?.takeIf { it >= 0.0 }
-                val reps = parseReps(repsText)
+                val reps = if (repsText.isEmpty()) 0 else parseReps(repsText)
+                val duration = if (timeText.isEmpty()) 0 else Durations.parse(timeText)
+                val distance = if (distanceText.isEmpty()) 0.0 else WeightMath.parse(distanceText)?.takeIf { it >= 0.0 }
+                val distanceUnitText = table.value(row, DISTANCE_UNIT)
+                val distanceUnit = if (distanceUnitText.isEmpty()) DistanceUnit.KM else DistanceUnit.parse(distanceUnitText)
                 val ratioText = table.value(row, RATIO)
                 val ratio = if (ratioText.isEmpty()) WeightMath.DEFAULT_RATIO else WeightMath.parse(ratioText)?.takeIf { it > 0.0 }
                 val unitText = table.value(row, UNIT)
                 val unit = if (unitText.isEmpty()) null else parseUnit(unitText)
                 val problem = when {
                     weight == null -> "couldn't read the weight \"$weightText\""
-                    reps == null -> "reps must be a whole number above 0 (got \"$repsText\")"
+                    reps == null -> "reps must be a whole number (got \"$repsText\")"
+                    duration == null -> "time must look like 25:30 or 1:02:03 (got \"$timeText\")"
+                    distance == null -> "couldn't read the distance \"$distanceText\""
+                    distanceUnit == null -> "distance unit must be km or mi (got \"$distanceUnitText\")"
                     ratio == null -> "ratio must be a number above 0 (got \"$ratioText\")"
                     unitText.isNotEmpty() && unit == null -> "unit must be kg or lb (got \"$unitText\")"
+                    reps == 0 && duration == 0 && distance == 0.0 -> "needs reps, a time or a distance"
                     else -> null
                 }
-                if (problem != null || weight == null || reps == null || ratio == null) {
+                if (problem != null || weight == null || reps == null || duration == null ||
+                    distance == null || distanceUnit == null || ratio == null
+                ) {
                     warnings += "$SETS row $rowNumber: $problem"
                     continue
                 }
-                PendingSet(weight, unit, ratio, reps)
+                PendingSet(weight, unit, ratio, reps, duration, distance, distanceUnit)
             }
 
             val day = days.getOrPut(date) { PendingDay(date) }
             if (day.unit == null) day.unit = parseUnit(table.value(row, WORKOUT_UNIT))
-            val slot = day.exercises.getOrPut(key) { name to ArrayList() }
-            if (set != null) slot.second += set
+            val slot = day.exercises.getOrPut(name.lowercase()) { PendingExercise(name, "") }
+            if (slot.category.isEmpty()) slot.category = table.value(row, CATEGORY)
+            if (set != null) slot.sets += set
         }
-
-        return days.values.sortedBy { it.date }.map { day ->
-            val dayUnit = day.unit
-                ?: day.exercises.values.flatMap { it.second }.firstNotNullOfOrNull { it.unit }
-                ?: WeightUnit.KG
-            BackupWorkout(
-                date = day.date,
-                unit = dayUnit,
-                exercises = day.exercises.map { (key, slot) ->
-                    BackupWorkoutExercise(
-                        exercise = BackupExercise(slot.first, categories[key].orEmpty()),
-                        sets = slot.second.map { SetValues(it.weight, it.unit ?: dayUnit, it.ratio, it.reps) },
-                    )
-                },
-            )
-        }
+        return days.values.toList()
     }
 
-    private fun parseExercises(table: Table, warnings: MutableList<String>): List<BackupExercise> {
+    private fun parseExercises(table: Table, warnings: MutableList<String>): List<Definition> {
         if (!table.has(EXERCISE)) {
             if (table.dataRows.isNotEmpty()) warnings += "$EXERCISES sheet skipped: it has no \"$EXERCISE\" column"
             return emptyList()
         }
-        return table.dataRows.mapNotNull { (_, row) ->
-            table.value(row, EXERCISE).takeIf { it.isNotEmpty() }?.let { BackupExercise(it, table.value(row, CATEGORY)) }
+        return table.dataRows.mapNotNull { (rowNumber, row) ->
+            val name = table.value(row, EXERCISE).takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val measureText = table.value(row, MEASURE)
+            val weightText = table.value(row, WEIGHT)
+            val measure = Measure.parse(measureText)
+            val weightMode = WeightMode.parse(weightText)
+            if (measureText.isNotEmpty() && measure == null) {
+                warnings += "$EXERCISES row $rowNumber: unknown measure \"$measureText\" (use Reps, Time, Distance or Distance + time)"
+            }
+            if (weightText.isNotEmpty() && weightMode == null) {
+                warnings += "$EXERCISES row $rowNumber: unknown weight setting \"$weightText\" (use Match workout, kg, lb or No weight)"
+            }
+            Definition(name, table.value(row, CATEGORY), measure, weightMode)
         }.distinctBy { it.name.lowercase() }
     }
 
-    private fun parsePresets(table: Table, warnings: MutableList<String>): List<BackupPreset> {
+    private class PresetRow(val name: String, val items: List<PendingExercise>)
+
+    private fun parsePresets(table: Table, warnings: MutableList<String>): List<PresetRow> {
         if (!table.has(PRESET) || !table.has(EXERCISE)) {
             if (table.dataRows.isNotEmpty()) warnings += "$PRESETS sheet skipped: it needs \"$PRESET\" and \"$EXERCISE\" columns"
             return emptyList()
         }
-        class Item(val order: Double?, val row: Int, val exercise: BackupExercise)
+        class Item(val order: Double?, val row: Int, val exercise: PendingExercise)
         val presets = LinkedHashMap<String, Pair<String, MutableList<Item>>>()
         for ((rowNumber, row) in table.dataRows) {
             val presetName = table.value(row, PRESET)
@@ -239,16 +357,23 @@ object BackupSpreadsheet {
             val slot = presets.getOrPut(presetName.lowercase()) { presetName to ArrayList() }
             val exercise = table.value(row, EXERCISE)
             if (exercise.isEmpty()) continue // a preset with no exercises yet
-            slot.second += Item(WeightMath.parse(table.value(row, ORDER)), rowNumber, BackupExercise(exercise, table.value(row, CATEGORY)))
+            slot.second += Item(WeightMath.parse(table.value(row, ORDER)), rowNumber, PendingExercise(exercise, table.value(row, CATEGORY)))
         }
         return presets.values.map { (name, items) ->
-            BackupPreset(
+            PresetRow(
                 name = name,
-                exercises = items
+                items = items
                     .sortedWith(compareBy<Item, Double?>(nullsLast()) { it.order }.thenBy { it.row })
                     .map { it.exercise },
             )
         }
+    }
+
+    private fun parseCategories(table: Table): List<String> {
+        if (!table.has(CATEGORY)) return emptyList()
+        return table.dataRows
+            .mapNotNull { (_, row) -> table.value(row, CATEGORY).takeIf { it.isNotEmpty() } }
+            .distinctBy { it.lowercase() }
     }
 
     // ---------------------------------------------------------------- cell parsing
@@ -271,7 +396,7 @@ object BackupSpreadsheet {
 
     private fun parseReps(text: String): Int? {
         val value = WeightMath.parse(text) ?: return null
-        if (value <= 0.0 || value % 1.0 != 0.0 || value > 100_000) return null
+        if (value < 0.0 || value % 1.0 != 0.0 || value > 100_000) return null
         return value.toInt()
     }
 

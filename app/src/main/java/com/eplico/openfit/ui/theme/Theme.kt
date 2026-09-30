@@ -1,92 +1,103 @@
 package com.eplico.openfit.ui.theme
 
+import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import com.eplico.openfit.core.AccentColor
+import com.eplico.openfit.core.Palette
+import com.eplico.openfit.core.SchemeColors
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF1B6D2F),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFA4F5A8),
-    onPrimaryContainer = Color(0xFF002107),
-    secondary = Color(0xFF516350),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFD4E8D0),
-    onSecondaryContainer = Color(0xFF0F1F10),
-    tertiary = Color(0xFF39656B),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFBCEBF1),
-    onTertiaryContainer = Color(0xFF001F23),
-    background = Color(0xFFF6FBF4),
-    onBackground = Color(0xFF181D18),
-    surface = Color(0xFFF6FBF4),
-    onSurface = Color(0xFF181D18),
-    surfaceVariant = Color(0xFFDDE5DA),
-    onSurfaceVariant = Color(0xFF414941),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF0F5EE),
-    surfaceContainer = Color(0xFFEAEFE8),
-    surfaceContainerHigh = Color(0xFFE5EAE3),
-    surfaceContainerHighest = Color(0xFFDFE4DD),
-    outline = Color(0xFF717970),
-    outlineVariant = Color(0xFFC1C9BE),
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF89D88E),
-    onPrimary = Color(0xFF003912),
-    primaryContainer = Color(0xFF00531D),
-    onPrimaryContainer = Color(0xFFA4F5A8),
-    secondary = Color(0xFFB8CCB5),
-    onSecondary = Color(0xFF243424),
-    secondaryContainer = Color(0xFF3A4B39),
-    onSecondaryContainer = Color(0xFFD4E8D0),
-    tertiary = Color(0xFFA1CED5),
-    onTertiary = Color(0xFF00363C),
-    tertiaryContainer = Color(0xFF1F4D53),
-    onTertiaryContainer = Color(0xFFBCEBF1),
-    background = Color(0xFF0F1512),
-    onBackground = Color(0xFFDFE4DD),
-    surface = Color(0xFF0F1512),
-    onSurface = Color(0xFFDFE4DD),
-    surfaceVariant = Color(0xFF414941),
-    onSurfaceVariant = Color(0xFFC1C9BE),
-    surfaceContainerLowest = Color(0xFF0A0F0C),
-    surfaceContainerLow = Color(0xFF181D18),
-    surfaceContainer = Color(0xFF1C211C),
-    surfaceContainerHigh = Color(0xFF262B26),
-    surfaceContainerHighest = Color(0xFF313631),
-    outline = Color(0xFF8B9389),
-    outlineVariant = Color(0xFF414941),
-)
-
-/** GitHub-style contribution greens, index 0 = no workout, 4 = busiest. */
+/** GitHub-style contribution shades, index 0 = no workout, 4 = busiest. */
 data class HeatmapColors(val levels: List<Color>)
 
-private val LightHeatmap = HeatmapColors(
-    listOf(Color(0xFFE3E8E1), Color(0xFF9BE9A8), Color(0xFF40C463), Color(0xFF30A14E), Color(0xFF216E39)),
-)
+val LocalHeatmapColors = staticCompositionLocalOf {
+    HeatmapColors(Palette.scheme(AccentColor.GREEN.seed!!, dark = false).heatmap.map(::Color))
+}
 
-private val DarkHeatmap = HeatmapColors(
-    listOf(Color(0xFF232A25), Color(0xFF0E4429), Color(0xFF006D32), Color(0xFF26A641), Color(0xFF39D353)),
-)
-
-val LocalHeatmapColors = staticCompositionLocalOf { LightHeatmap }
+/** True when the wallpaper-based ("Material You") colours are available on this device. */
+@get:ChecksSdkIntAtLeast(api = Build.VERSION_CODES.S)
+val supportsWallpaperColors: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 @Composable
 fun OpenFitTheme(
+    accent: AccentColor = AccentColor.GREEN,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    CompositionLocalProvider(LocalHeatmapColors provides if (darkTheme) DarkHeatmap else LightHeatmap) {
-        MaterialTheme(
-            colorScheme = if (darkTheme) DarkColors else LightColors,
-            content = content,
+    val context = LocalContext.current
+    val (colorScheme, heatmap) = remember(accent, darkTheme) {
+        if (accent == AccentColor.WALLPAPER && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val scheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            scheme to Palette.heatmap(scheme.primary.toArgb(), darkTheme)
+        } else {
+            val seed = accent.seed ?: AccentColor.GREEN.seed!!
+            val generated = Palette.scheme(seed, darkTheme)
+            generated.toColorScheme(darkTheme) to generated.heatmap
+        }
+    }
+    CompositionLocalProvider(LocalHeatmapColors provides HeatmapColors(heatmap.map(::Color))) {
+        MaterialTheme(colorScheme = colorScheme, content = content)
+    }
+}
+
+private fun SchemeColors.toColorScheme(dark: Boolean): ColorScheme {
+    fun c(argb: Int) = Color(argb)
+    return if (dark) {
+        darkColorScheme(
+            primary = c(primary), onPrimary = c(onPrimary),
+            primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
+            inversePrimary = c(inversePrimary),
+            secondary = c(secondary), onSecondary = c(onSecondary),
+            secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
+            tertiary = c(tertiary), onTertiary = c(onTertiary),
+            tertiaryContainer = c(tertiaryContainer), onTertiaryContainer = c(onTertiaryContainer),
+            background = c(background), onBackground = c(onBackground),
+            surface = c(surface), onSurface = c(onSurface),
+            surfaceVariant = c(surfaceVariant), onSurfaceVariant = c(onSurfaceVariant),
+            surfaceTint = c(primary),
+            inverseSurface = c(inverseSurface), inverseOnSurface = c(inverseOnSurface),
+            error = c(error), onError = c(onError),
+            errorContainer = c(errorContainer), onErrorContainer = c(onErrorContainer),
+            outline = c(outline), outlineVariant = c(outlineVariant),
+            surfaceBright = c(surfaceBright), surfaceDim = c(surfaceDim),
+            surfaceContainer = c(surfaceContainer), surfaceContainerHigh = c(surfaceContainerHigh),
+            surfaceContainerHighest = c(surfaceContainerHighest), surfaceContainerLow = c(surfaceContainerLow),
+            surfaceContainerLowest = c(surfaceContainerLowest),
+        )
+    } else {
+        lightColorScheme(
+            primary = c(primary), onPrimary = c(onPrimary),
+            primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
+            inversePrimary = c(inversePrimary),
+            secondary = c(secondary), onSecondary = c(onSecondary),
+            secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
+            tertiary = c(tertiary), onTertiary = c(onTertiary),
+            tertiaryContainer = c(tertiaryContainer), onTertiaryContainer = c(onTertiaryContainer),
+            background = c(background), onBackground = c(onBackground),
+            surface = c(surface), onSurface = c(onSurface),
+            surfaceVariant = c(surfaceVariant), onSurfaceVariant = c(onSurfaceVariant),
+            surfaceTint = c(primary),
+            inverseSurface = c(inverseSurface), inverseOnSurface = c(inverseOnSurface),
+            error = c(error), onError = c(onError),
+            errorContainer = c(errorContainer), onErrorContainer = c(onErrorContainer),
+            outline = c(outline), outlineVariant = c(outlineVariant),
+            surfaceBright = c(surfaceBright), surfaceDim = c(surfaceDim),
+            surfaceContainer = c(surfaceContainer), surfaceContainerHigh = c(surfaceContainerHigh),
+            surfaceContainerHighest = c(surfaceContainerHighest), surfaceContainerLow = c(surfaceContainerLow),
+            surfaceContainerLowest = c(surfaceContainerLowest),
         )
     }
 }

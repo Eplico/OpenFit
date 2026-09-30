@@ -6,29 +6,27 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.eplico.openfit.data.DefaultExercises
 import com.eplico.openfit.data.Exercise
 import com.eplico.openfit.data.WorkoutRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
  * Chooses an exercise either for a workout day (nav arg "date", an epoch day) or for a
- * preset (nav arg "presetId"). Also lets the user manage the exercise library.
+ * preset (nav arg "presetId"). Also lets the user delete exercises from the library.
  */
 class ExercisePickerViewModel(
     savedStateHandle: SavedStateHandle,
     private val repository: WorkoutRepository,
 ) : ViewModel() {
 
-    private val date: LocalDate? = savedStateHandle.get<Long>("date")?.let(LocalDate::ofEpochDay)
-    private val presetId: Long? = savedStateHandle.get<Long>("presetId")
+    val date: LocalDate? = savedStateHandle.get<Long>("date")?.let(LocalDate::ofEpochDay)
+    val presetId: Long? = savedStateHandle.get<Long>("presetId")
 
     val forPreset: Boolean get() = presetId != null
 
@@ -45,22 +43,11 @@ class ExercisePickerViewModel(
                 .toList()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val categories: StateFlow<List<String>> = repository.exercises
-        .map { list -> (DefaultExercises.categories + list.map { it.category }).distinctBy { it.lowercase() } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DefaultExercises.categories)
-
-    var error by mutableStateOf<String?>(null)
-        private set
-
     private var picking = false
 
     fun onQueryChange(text: String) {
         query = text
         queryFlow.value = text
-    }
-
-    fun errorShown() {
-        error = null
     }
 
     /**
@@ -79,22 +66,6 @@ class ExercisePickerViewModel(
                     onAddedToPreset()
                 }
             }
-        }
-    }
-
-    fun create(name: String, category: String, onCreated: (Exercise) -> Unit) {
-        viewModelScope.launch {
-            repository.createExercise(name, category)
-                .onSuccess { id -> onCreated(Exercise(id = id, name = name.trim(), category = category.trim())) }
-                .onFailure { error = it.message }
-        }
-    }
-
-    fun update(exercise: Exercise, onDone: () -> Unit) {
-        viewModelScope.launch {
-            repository.updateExercise(exercise)
-                .onSuccess { onDone() }
-                .onFailure { error = it.message }
         }
     }
 

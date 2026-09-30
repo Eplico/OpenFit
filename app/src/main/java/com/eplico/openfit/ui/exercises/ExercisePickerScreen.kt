@@ -1,13 +1,10 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.eplico.openfit.ui.exercises
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,25 +20,20 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,29 +47,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eplico.openfit.data.Exercise
 import com.eplico.openfit.ui.AppViewModels
 import com.eplico.openfit.ui.common.ConfirmDialog
+import com.eplico.openfit.ui.common.typeSummary
 
 @Composable
 fun ExercisePickerScreen(
     onBack: () -> Unit,
     onAddedToWorkout: (workoutExerciseId: Long) -> Unit,
     onAddedToPreset: () -> Unit,
+    onNewExercise: (name: String) -> Unit,
+    onEditExercise: (exerciseId: Long) -> Unit,
     viewModel: ExercisePickerViewModel = viewModel(factory = AppViewModels.Factory),
 ) {
     val groups by viewModel.groups.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-
-    // null = closed; Exercise with id 0 = creating a new one.
-    var editing by remember { mutableStateOf<Exercise?>(null) }
     var deleting by remember { mutableStateOf<Exercise?>(null) }
-
-    val error = viewModel.error
-    LaunchedEffect(error) {
-        if (error != null) {
-            snackbar.showSnackbar(error)
-            viewModel.errorShown()
-        }
-    }
 
     val pick: (Exercise) -> Unit = { exercise ->
         viewModel.pick(exercise, onAddedToWorkout, onAddedToPreset)
@@ -96,12 +78,11 @@ fun ExercisePickerScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { editing = Exercise(name = viewModel.query.trim(), category = "") },
+                onClick = { onNewExercise(viewModel.query.trim()) },
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                 text = { Text("New exercise") },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(
             Modifier
@@ -140,7 +121,7 @@ fun ExercisePickerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (viewModel.query.isNotBlank()) {
-                                TextButton(onClick = { editing = Exercise(name = viewModel.query.trim(), category = "") }) {
+                                TextButton(onClick = { onNewExercise(viewModel.query.trim()) }) {
                                     Text("Create \"${viewModel.query.trim()}\"")
                                 }
                             }
@@ -160,31 +141,13 @@ fun ExercisePickerScreen(
                         ExerciseRow(
                             exercise = exercise,
                             onClick = { pick(exercise) },
-                            onEdit = { editing = exercise },
+                            onEdit = { onEditExercise(exercise.id) },
                             onDelete = { deleting = exercise },
                         )
                     }
                 }
             }
         }
-    }
-
-    editing?.let { target ->
-        ExerciseEditorDialog(
-            initial = target,
-            categories = categories,
-            onDismiss = { editing = null },
-            onSave = { name, category ->
-                if (target.id == 0L) {
-                    viewModel.create(name, category) { created ->
-                        editing = null
-                        pick(created)
-                    }
-                } else {
-                    viewModel.update(target.copy(name = name, category = category)) { editing = null }
-                }
-            },
-        )
     }
 
     deleting?.let { target ->
@@ -209,8 +172,14 @@ private fun ExerciseRow(
     onDelete: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val type = exercise.typeSummary()
     ListItem(
         headlineContent = { Text(exercise.name) },
+        supportingContent = if (type != null) {
+            { Text(type) }
+        } else {
+            null
+        },
         trailingContent = {
             Box {
                 IconButton(onClick = { menuOpen = true }) {
@@ -237,55 +206,5 @@ private fun ExerciseRow(
             }
         },
         modifier = Modifier.clickable(onClick = onClick),
-    )
-}
-
-@Composable
-private fun ExerciseEditorDialog(
-    initial: Exercise,
-    categories: List<String>,
-    onDismiss: () -> Unit,
-    onSave: (name: String, category: String) -> Unit,
-) {
-    var name by remember { mutableStateOf(initial.name) }
-    var category by remember { mutableStateOf(initial.category.ifEmpty { categories.firstOrNull().orEmpty() }) }
-    val canSave = name.isNotBlank() && category.isNotBlank()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial.id == 0L) "New exercise" else "Edit exercise") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    label = { Text("Category") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    categories.forEach { option ->
-                        FilterChip(
-                            selected = option.equals(category.trim(), ignoreCase = true),
-                            onClick = { category = option },
-                            label = { Text(option) },
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(name, category) }, enabled = canSave) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

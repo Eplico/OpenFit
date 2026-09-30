@@ -74,8 +74,8 @@ import com.eplico.openfit.ui.common.ConfirmDialog
 import com.eplico.openfit.ui.common.TextInputDialog
 import com.eplico.openfit.ui.common.UnitToggle
 import com.eplico.openfit.ui.common.longLabel
-import com.eplico.openfit.ui.common.primaryLine
-import com.eplico.openfit.ui.common.ratioLine
+import com.eplico.openfit.ui.common.describe
+import com.eplico.openfit.ui.common.detail
 import com.eplico.openfit.ui.common.relativeLabel
 import java.time.Instant
 import java.time.LocalDate
@@ -364,7 +364,11 @@ private fun ExerciseCard(
                 )
             } else {
                 entry.sets.forEachIndexed { index, set ->
-                    SetSummaryRow(number = index + 1, primary = set.values.primaryLine(unit), secondary = set.values.ratioLine(unit))
+                    SetSummaryRow(
+                        number = index + 1,
+                        primary = entry.exercise.describe(set.values, unit),
+                        secondary = entry.exercise.detail(set.values, unit),
+                    )
                 }
             }
         }

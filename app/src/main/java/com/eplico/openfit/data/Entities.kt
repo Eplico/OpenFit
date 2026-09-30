@@ -6,7 +6,10 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import java.time.LocalDate
 
@@ -17,7 +20,23 @@ import java.time.LocalDate
 data class Exercise(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    /** Name of a row in [Category]; the repository keeps the two in step. */
     val category: String,
+    /** What each set records besides weight: reps, time, distance, or distance + time. */
+    val measure: Measure = Measure.REPS,
+    /** Whether the exercise has a weight, and whether it follows the workout's kg/lb or is fixed. */
+    val weightMode: WeightMode = WeightMode.WORKOUT,
+)
+
+/** A user-editable exercise category. [position] orders the picker and the categories screen. */
+@Entity(
+    tableName = "categories",
+    indices = [Index(value = ["name"], unique = true)],
+)
+data class Category(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val position: Int,
 )
 
 /** One training day. Every day has at most one workout, and each workout has its own unit. */
@@ -62,7 +81,8 @@ data class WorkoutExercise(
 
 /**
  * A logged set. [weight] is stored exactly as typed, in [unit]; the calculated weight is
- * [weight] × [ratio]. Displaying in a different unit converts on the fly.
+ * [weight] × [ratio]. Displaying in a different unit converts on the fly. Fields the exercise
+ * doesn't use (e.g. reps for a run) are 0.
  */
 @Entity(
     tableName = "sets",
@@ -85,10 +105,21 @@ data class SetEntry(
     val reps: Int,
     val position: Int,
     val loggedAt: Long,
+    val durationSeconds: Int = 0,
+    val distance: Double = 0.0,
+    val distanceUnit: DistanceUnit = DistanceUnit.KM,
 )
 
 val SetEntry.values: SetValues
-    get() = SetValues(weight = weight, unit = unit, ratio = ratio, reps = reps)
+    get() = SetValues(
+        weight = weight,
+        unit = unit,
+        ratio = ratio,
+        reps = reps,
+        durationSeconds = durationSeconds,
+        distance = distance,
+        distanceUnit = distanceUnit,
+    )
 
 @Entity(tableName = "presets")
 data class Preset(
@@ -162,6 +193,11 @@ data class PresetWithItems(
 
 val PresetWithItems.orderedItems: List<PresetItem>
     get() = items.sortedBy { it.item.position }
+
+data class CategoryWithCount(
+    @Embedded val category: Category,
+    val exerciseCount: Int,
+)
 
 data class DayCount(
     val date: LocalDate,

@@ -1,6 +1,9 @@
 package com.eplico.openfit.core.backup
 
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -14,9 +17,12 @@ class BackupSpreadsheetTest {
     private val squat = BackupExercise("Barbell Squat", "Legs")
     private val bench = BackupExercise("Flat Barbell Bench Press", "Chest")
     private val cable = BackupExercise("Cable Row (single arm)", "Back")
+    private val running = BackupExercise("Running", "Cardio", Measure.DISTANCE_TIME, WeightMode.NONE)
+    private val plank = BackupExercise("Plank", "Core", Measure.TIME, WeightMode.NONE)
+    private val press = BackupExercise("Leg Press", "Legs", Measure.REPS, WeightMode.LB)
 
     private val sample = Backup(
-        exercises = listOf(squat, bench, cable, BackupExercise("Zercher Squat", "Legs")),
+        exercises = listOf(squat, bench, cable, BackupExercise("Zercher Squat", "Legs"), running, plank, press),
         workouts = listOf(
             BackupWorkout(
                 date = LocalDate.of(2026, 9, 30),
@@ -25,6 +31,9 @@ class BackupSpreadsheetTest {
                     BackupWorkoutExercise(squat, listOf(SetValues(225.0, WeightUnit.LB, 1.0, 5), SetValues(235.0, WeightUnit.LB, 1.0, 3))),
                     BackupWorkoutExercise(cable, listOf(SetValues(40.0, WeightUnit.KG, 0.5, 12))),
                     BackupWorkoutExercise(bench, emptyList()),
+                    BackupWorkoutExercise(running, listOf(SetValues(0.0, WeightUnit.LB, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))),
+                    BackupWorkoutExercise(plank, listOf(SetValues(0.0, WeightUnit.LB, durationSeconds = 90))),
+                    BackupWorkoutExercise(press, listOf(SetValues(180.0, WeightUnit.LB, 1.0, 10))),
                 ),
             ),
             BackupWorkout(
@@ -37,6 +46,7 @@ class BackupSpreadsheetTest {
             BackupPreset("Legs", listOf(squat, BackupExercise("Zercher Squat", "Legs"))),
             BackupPreset("Empty day", emptyList()),
         ),
+        categories = listOf("Chest", "Back", "Legs", "Core", "Cardio", "Mobility"),
     )
 
     private fun roundTrip(backup: Backup): ParsedBackup {
@@ -51,28 +61,91 @@ class BackupSpreadsheetTest {
         assertEquals(emptyList<String>(), parsed.warnings)
         // Workouts come back oldest first and the library sorted by category; nothing else changes.
         val expected = sample.copy(
-            exercises = listOf(cable, bench, squat, BackupExercise("Zercher Squat", "Legs")),
+            exercises = listOf(cable, running, bench, plank, squat, press, BackupExercise("Zercher Squat", "Legs")),
             workouts = sample.workouts.sortedBy { it.date },
         )
         assertEquals(expected, parsed.backup)
-        assertEquals(4, parsed.backup.setCount)
+        assertEquals(7, parsed.backup.setCount)
     }
 
     @Test
     fun setsSheetIsReadableAsAPlainTable() {
         val sheets = BackupSpreadsheet.toSheets(sample)
-        assertEquals(listOf("Sets", "Presets", "Exercises"), sheets.map { it.name })
+        assertEquals(listOf("Sets", "Presets", "Exercises", "Categories"), sheets.map { it.name })
         val sets = sheets.first()
         assertEquals(
-            listOf("Date", "Exercise", "Category", "Set", "Weight", "Unit", "Ratio", "Calculated Weight", "Reps", "Workout Unit"),
+            listOf(
+                "Date", "Exercise", "Category", "Set", "Weight", "Unit", "Ratio", "Calculated Weight", "Reps",
+                "Time", "Distance", "Distance Unit", "Workout Unit",
+            ),
             sets.header,
         )
+        assertTrue(sets.rows.all { it.size == sets.header.size })
         val cableRow = sets.rows.first { (it[1] as Cell.Text).value == cable.name }
         assertEquals(Cell.Number(40.0), cableRow[4])
         assertEquals(Cell.Text("kg"), cableRow[5])
         assertEquals(Cell.Number(0.5), cableRow[6])
         assertEquals(Cell.Number(20.0), cableRow[7]) // calculated weight = 40 × 0.5
-        assertEquals(Cell.Text("lb"), cableRow[9])
+        assertEquals(Cell.Number(12.0), cableRow[8])
+        assertEquals(Cell.Empty, cableRow[9])
+        assertEquals(Cell.Text("lb"), cableRow[12])
+
+        val runRow = sets.rows.first { (it[1] as Cell.Text).value == running.name }
+        assertEquals(List(4) { Cell.Empty }, runRow.subList(4, 8)) // no weight columns for "No weight"
+        assertEquals(Cell.Text("25:30"), runRow[9])
+        assertEquals(Cell.Number(5.0), runRow[10])
+        assertEquals(Cell.Text("mi"), runRow[11])
+    }
+
+    @Test
+    fun exerciseTypesAreInferredFromASheetWithoutAnExercisesTab() {
+        val parsed = BackupSpreadsheet.fromWorkbook(
+            workbook(
+                "Sets" to listOf(
+                    listOf("Date", "Exercise", "Weight", "Reps", "Time", "Distance", "Distance Unit"),
+                    listOf("2026-09-01", "Running", "", "", "25:30", "5", "mi"),
+                    listOf("2026-09-01", "Plank", "", "", "1:30", "", ""),
+                    listOf("2026-09-01", "Farmer Walk", "40", "", "", "0.05", ""),
+                    listOf("2026-09-01", "Squat", "100", "5", "", "", ""),
+                    listOf("2026-09-01", "Sled", "20", "", "", "", ""),
+                ),
+            ),
+        )
+        assertEquals(listOf("Sets row 6: needs reps, a time or a distance"), parsed.warnings)
+        val types = parsed.backup.exercises.associate { it.name to (it.measure to it.weightMode) }
+        assertEquals(Measure.DISTANCE_TIME to WeightMode.NONE, types["Running"])
+        assertEquals(Measure.TIME to WeightMode.NONE, types["Plank"])
+        assertEquals(Measure.DISTANCE to WeightMode.WORKOUT, types["Farmer Walk"])
+        assertEquals(Measure.REPS to WeightMode.WORKOUT, types["Squat"])
+        val run = parsed.backup.workouts.single().exercises.first().sets.single()
+        assertEquals(SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI), run)
+    }
+
+    @Test
+    fun exercisesTabOverridesInferenceAndCategoriesTabIsRead() {
+        val parsed = BackupSpreadsheet.fromWorkbook(
+            workbook(
+                "Sets" to listOf(
+                    listOf("Date", "Exercise", "Reps", "Time"),
+                    listOf("2026-09-01", "Burpees", "", "2:00"),
+                ),
+                "Exercises" to listOf(
+                    listOf("Exercise", "Category", "Measure", "Weight"),
+                    listOf("Burpees", "Conditioning", "Time", "n/a"),
+                    listOf("Hip Airplane", "Mobility", "sideways", "kg"),
+                ),
+                "Categories" to listOf(listOf("Category"), listOf("Conditioning"), listOf("Mobility"), listOf("mobility")),
+            ),
+        )
+        assertEquals(listOf("Exercises row 3: unknown measure \"sideways\" (use Reps, Time, Distance or Distance + time)"), parsed.warnings)
+        assertEquals(
+            listOf(
+                BackupExercise("Burpees", "Conditioning", Measure.TIME, WeightMode.NONE),
+                BackupExercise("Hip Airplane", "Mobility", Measure.REPS, WeightMode.KG),
+            ),
+            parsed.backup.exercises,
+        )
+        assertEquals(listOf("Conditioning", "Mobility"), parsed.backup.categories)
     }
 
     private fun workbook(vararg sheets: Pair<String, List<List<String>>>) = linkedMapOf(*sheets)

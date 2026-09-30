@@ -3,7 +3,10 @@ package com.eplico.openfit.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -206,5 +209,69 @@ class WorkoutRepositoryTest {
         repository.deleteExercise(curl)
         assertTrue(repository.observeSetCountsByDay().first().isEmpty())
         assertTrue(dayNames(day1).isEmpty())
+    }
+
+    private suspend fun categoryNames() = repository.categories.first().map { it.category.name }
+
+    @Test
+    fun seedsCategoriesInOrderWithCardio() = runBlocking {
+        assertEquals(DefaultExercises.categories, categoryNames())
+        val running = exercise("Running")
+        assertEquals("Cardio", running.category)
+        assertEquals(Measure.DISTANCE_TIME to WeightMode.NONE, running.measure to running.weightMode)
+        assertEquals(Measure.TIME, exercise("Plank").measure)
+    }
+
+    @Test
+    fun creatingAnExerciseInANewCategoryAddsTheCategory() = runBlocking {
+        repository.createExercise("Turkish Get Up", " Kettlebell ", Measure.REPS, WeightMode.KG).getOrThrow()
+        assertEquals(DefaultExercises.categories + "Kettlebell", categoryNames())
+        val created = exercise("Turkish Get Up")
+        assertEquals("Kettlebell", created.category)
+        assertEquals(WeightMode.KG, created.weightMode)
+        // Existing categories are matched ignoring case, not duplicated.
+        repository.createExercise("Windmill", "kettlebell").getOrThrow()
+        assertEquals("Kettlebell", exercise("Windmill").category)
+        assertEquals(DefaultExercises.categories.size + 1, categoryNames().size)
+    }
+
+    @Test
+    fun renamingACategoryMovesItsExercises() = runBlocking {
+        val legs = repository.categories.first().first { it.category.name == "Legs" }
+        assertTrue(repository.renameCategory(legs.category.id, "chest").isFailure) // clashes with Chest
+        repository.renameCategory(legs.category.id, "Lower Body").getOrThrow()
+        assertEquals("Lower Body", exercise("Barbell Squat").category)
+        assertEquals(legs.exerciseCount, repository.categories.first().first { it.category.name == "Lower Body" }.exerciseCount)
+    }
+
+    @Test
+    fun deletingACategoryMovesItsExercisesToOther() = runBlocking {
+        val categories = repository.categories.first()
+        val biceps = categories.first { it.category.name == "Biceps" }
+        repository.deleteCategory(biceps.category.id).getOrThrow()
+        assertEquals(DefaultExercises.OTHER, exercise("Hammer Curl").category)
+        assertTrue("Biceps" !in categoryNames())
+
+        val other = categories.first { it.category.name == DefaultExercises.OTHER }
+        assertTrue(repository.deleteCategory(other.category.id).isFailure)
+    }
+
+    @Test
+    fun categoriesCanBeReordered() = runBlocking {
+        val cardio = repository.categories.first().first { it.category.name == "Cardio" }
+        repository.moveCategory(cardio.category.id, -7)
+        assertEquals("Cardio", categoryNames().first())
+        // The picker groups follow the new order.
+        assertEquals("Cardio", repository.exercises.first().first().category)
+    }
+
+    @Test
+    fun cardioSetsKeepTimeAndDistance() = runBlocking {
+        val entry = repository.addExerciseToWorkout(day1, exercise("Running").id)
+        val run = SetValues(0.0, WeightUnit.KG, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI)
+        repository.addSet(entry, run)
+        assertEquals(run, repository.observeEntry(entry).first()!!.sets.single().values)
+        assertEquals(run, repository.lastSet(exercise("Running").id, day2)!!.set.values)
+        assertEquals(mapOf(day1 to 1), repository.observeSetCountsByDay().first())
     }
 }

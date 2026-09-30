@@ -8,6 +8,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.eplico.openfit.AppContainer
 import com.eplico.openfit.OpenFitApp
 import com.eplico.openfit.ui.calendar.CalendarViewModel
+import com.eplico.openfit.ui.exercises.CategoriesViewModel
+import com.eplico.openfit.ui.exercises.ExerciseEditorViewModel
 import com.eplico.openfit.ui.exercises.ExercisePickerViewModel
 import com.eplico.openfit.ui.log.ExerciseLogViewModel
 import com.eplico.openfit.ui.presets.PresetEditViewModel
@@ -28,6 +30,12 @@ object AppViewModels {
         }
         initializer {
             ExercisePickerViewModel(createSavedStateHandle(), container().repository)
+        }
+        initializer {
+            ExerciseEditorViewModel(createSavedStateHandle(), container().repository)
+        }
+        initializer {
+            CategoriesViewModel(container().repository)
         }
         initializer {
             val c = container()

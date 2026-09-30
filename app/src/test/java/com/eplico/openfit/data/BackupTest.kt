@@ -4,9 +4,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.core.backup.Backup
+import com.eplico.openfit.core.backup.BackupExercise
 import com.eplico.openfit.core.backup.BackupSpreadsheet
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -50,10 +54,18 @@ class BackupTest {
 
     private suspend fun WorkoutRepository.exerciseId(name: String): Long = exercises.first().first { it.name == name }.id
 
-    /** Squat on day 1 (2 sets, day shown in lb), a custom exercise + a planned one on day 2, two presets. */
+    /**
+     * Squat on day 1 (2 sets, day shown in lb), a custom exercise + a planned one on day 2, a run,
+     * a custom category, two presets.
+     */
     private suspend fun logSampleData() {
         val squat = source.exerciseId("Barbell Squat")
         val belt = source.createExercise("Belt Squat", "Legs").getOrThrow()
+        source.createCategory("Mobility").getOrThrow()
+        val run = source.addExerciseToWorkout(day1, source.exerciseId("Running"))
+        // A no-weight exercise stores the day's unit (lb here), as the logging screen does.
+        source.setWorkoutUnit(day1, WeightUnit.LB)
+        source.addSet(run, SetValues(0.0, WeightUnit.LB, durationSeconds = 1530, distance = 5.0, distanceUnit = DistanceUnit.MI))
         val e1 = source.addExerciseToWorkout(day1, squat)
         source.addSet(e1, SetValues(100.0, WeightUnit.KG, 1.0, 5))
         source.addSet(e1, SetValues(60.0, WeightUnit.KG, 2.0, 8))
@@ -78,15 +90,17 @@ class BackupTest {
         val parsed = BackupSpreadsheet.read(ByteArrayInputStream(spreadsheetBytes(source.exportBackup())))
         assertEquals(emptyList<String>(), parsed.warnings)
 
+        assertEquals(listOf("Mobility"), target.unknownCategories(parsed.backup))
         val summary = target.importBackup(parsed.backup)
         assertEquals(
             ImportSummary(
-                setsAdded = 3,
+                setsAdded = 4,
                 daysWithNewSets = 2,
                 exercisesAdded = 1,
                 presetsAdded = 2,
                 presetsSkipped = 0,
                 exerciseDaysSkipped = 0,
+                categoriesAdded = 1,
             ),
             summary,
         )
@@ -95,8 +109,8 @@ class BackupTest {
 
         // Importing the same file again is harmless.
         val again = target.importBackup(parsed.backup)
-        assertEquals(ImportSummary(0, 0, 0, 0, presetsSkipped = 2, exerciseDaysSkipped = 2), again)
-        assertEquals(3, target.exportBackup().setCount)
+        assertEquals(ImportSummary(0, 0, 0, 0, presetsSkipped = 2, exerciseDaysSkipped = 3), again)
+        assertEquals(4, target.exportBackup().setCount)
     }
 
     @Test
@@ -112,12 +126,15 @@ class BackupTest {
 
         val summary = target.importBackup(source.exportBackup())
 
-        assertEquals(1, summary.setsAdded) // only Belt Squat on day 2
+        assertEquals(2, summary.setsAdded) // the run on day 1 and Belt Squat on day 2
         assertEquals(1, summary.exerciseDaysSkipped) // squat on day 1 was already logged here
         assertEquals(1, summary.presetsSkipped)
         val day1Sets = target.observeDay(day1).first()!!.entries.sortedBy { it.entry.position }
             .map { entry -> entry.exercise.name to entry.sets.map { it.weight } }
-        assertEquals(listOf("Flat Barbell Bench Press" to listOf(80.0), "Barbell Squat" to listOf(1.0)), day1Sets)
+        assertEquals(
+            listOf("Flat Barbell Bench Press" to listOf(80.0), "Barbell Squat" to listOf(1.0), "Running" to listOf(0.0)),
+            day1Sets,
+        )
         val keptPreset = target.observePreset(legs).first()!!
         assertEquals(listOf("Deadlift"), keptPreset.orderedItems.map { it.exercise.name })
     }
@@ -128,11 +145,11 @@ class BackupTest {
         val uri = Uri.parse("content://com.example.documents/OpenFit.xlsx")
         val written = ByteArrayOutputStream()
         shadowOf(context.contentResolver).registerOutputStream(uri, written)
-        assertEquals(3, BackupManager(context, source).exportTo(uri))
+        assertEquals(4, BackupManager(context, source).exportTo(uri))
 
         shadowOf(context.contentResolver).registerInputStream(uri, ByteArrayInputStream(written.toByteArray()))
         val result = BackupManager(context, target).importFrom(uri)
-        assertEquals(3, result.summary.setsAdded)
+        assertEquals(4, result.summary.setsAdded)
         assertEquals(emptyList<String>(), result.warnings)
     }
 
@@ -146,6 +163,39 @@ class BackupTest {
 
         val file = File(File(context.cacheDir, "exports"), manager.suggestedFileName())
         assertTrue(file.exists())
-        assertEquals(3, file.inputStream().use { BackupSpreadsheet.read(it) }.backup.setCount)
+        assertEquals(4, file.inputStream().use { BackupSpreadsheet.read(it) }.backup.setCount)
+    }
+
+    @Test
+    fun unknownCategoriesCanBeFiledUnderOther() = runBlocking {
+        val backup = Backup(
+            exercises = listOf(
+                BackupExercise("Box Jump", "Plyometrics", Measure.REPS, WeightMode.NONE),
+                BackupExercise("Barbell Squat", "Strength"), // already in the app: keeps its own category
+            ),
+            categories = listOf("Plyometrics", "Legs", "Recovery"),
+        )
+        assertEquals(listOf("Plyometrics", "Recovery"), target.unknownCategories(backup))
+
+        val summary = target.importBackup(backup, addUnknownCategories = false)
+        assertEquals(0, summary.categoriesAdded)
+        val exercises = target.exercises.first()
+        val boxJump = exercises.first { it.name == "Box Jump" }
+        assertEquals(DefaultExercises.OTHER, boxJump.category)
+        assertEquals(WeightMode.NONE, boxJump.weightMode)
+        assertEquals("Legs", exercises.first { it.name == "Barbell Squat" }.category)
+        assertEquals(DefaultExercises.categories, target.categories.first().map { it.category.name })
+    }
+
+    @Test
+    fun unknownCategoriesCanBeAdded() = runBlocking {
+        val backup = Backup(
+            exercises = listOf(BackupExercise("Box Jump", "Plyometrics")),
+            categories = listOf("Recovery"),
+        )
+        val summary = target.importBackup(backup, addUnknownCategories = true)
+        assertEquals(2, summary.categoriesAdded)
+        assertEquals("Plyometrics", target.exercises.first().first { it.name == "Box Jump" }.category)
+        assertEquals(DefaultExercises.categories + listOf("Recovery", "Plyometrics"), target.categories.first().map { it.category.name })
     }
 }

@@ -105,6 +105,87 @@ fun StepperField(
     }
 }
 
+/** "−  [ mm ] : [ ss ]  +" for times; separate boxes so a number keyboard works. */
+@Composable
+fun TimeStepperField(
+    label: String,
+    minutes: String,
+    seconds: String,
+    onMinutesChange: (String) -> Unit,
+    onSecondsChange: (String) -> Unit,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+) {
+    val textStyle = MaterialTheme.typography.titleLarge.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
+    val keyboard = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
+    Column(modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalIconButton(onClick = onDecrement, modifier = Modifier.size(52.dp)) {
+                Text("−", style = MaterialTheme.typography.headlineSmall)
+            }
+            OutlinedTextField(
+                value = minutes,
+                onValueChange = { text -> onMinutesChange(text.filter { it.isDigit() }) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                isError = isError,
+                textStyle = textStyle,
+                suffix = { Text("min") },
+                keyboardOptions = keyboard,
+            )
+            Text(":", style = MaterialTheme.typography.titleLarge)
+            OutlinedTextField(
+                value = seconds,
+                onValueChange = { text -> onSecondsChange(text.filter { it.isDigit() }) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                isError = isError,
+                textStyle = textStyle,
+                suffix = { Text("sec") },
+                keyboardOptions = keyboard,
+            )
+            FilledTonalIconButton(onClick = onIncrement, modifier = Modifier.size(52.dp)) {
+                Text("+", style = MaterialTheme.typography.headlineSmall)
+            }
+        }
+    }
+}
+
+/** Single-choice row of segmented buttons, e.g. kg / lb or km / mi. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun <T> ChoiceToggle(
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    SingleChoiceSegmentedButtonRow(modifier) {
+        options.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = selected == option,
+                onClick = { onSelect(option) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                icon = {},
+            ) {
+                Text(label(option))
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnitToggle(

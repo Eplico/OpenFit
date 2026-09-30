@@ -36,7 +36,7 @@ data class CalendarUiState(
     val grids: List<HeatmapGrid> = emptyList(),
     /** Days with at least one set inside the visible range. */
     val workoutsInRange: Int = 0,
-    val stats: StreakStats = StreakStats(0, 0, 0, 0),
+    val stats: StreakStats = StreakStats(0, 0, 0, Streaks.DEFAULT_GOAL, 0, 7 - Streaks.DEFAULT_GOAL),
     val loading: Boolean = true,
 )
 
@@ -71,7 +71,7 @@ class CalendarViewModel(
             weekStart = prefs.weekStart,
             grids = grids,
             workoutsInRange = grids.sumOf { it.activeDays },
-            stats = Streaks.compute(counts.filterValues { it > 0 }.keys, today, prefs.weekStart),
+            stats = Streaks.compute(counts.filterValues { it > 0 }.keys, today, prefs.weeklyGoal, prefs.weekStart),
             loading = false,
         )
     }

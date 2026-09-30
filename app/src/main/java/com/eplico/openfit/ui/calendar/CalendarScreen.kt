@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eplico.openfit.core.HeatmapGrid
+import com.eplico.openfit.core.StreakStats
 import com.eplico.openfit.ui.AppViewModels
 import java.time.LocalDate
 import java.time.YearMonth
@@ -165,19 +166,33 @@ private fun StatsRow(state: CalendarUiState) {
         CalendarRange.YEAR -> "This year"
         CalendarRange.LIFETIME -> "Workouts"
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        StatTile(value = "${state.workoutsInRange}", label = rangeLabel, modifier = Modifier.weight(1f))
-        StatTile(value = days(state.stats.currentStreak), label = "Streak", modifier = Modifier.weight(1f))
-        StatTile(value = days(state.stats.longestStreak), label = "Best streak", modifier = Modifier.weight(1f))
-        StatTile(
-            value = if (state.stats.currentWeekStreak == 1) "1 wk" else "${state.stats.currentWeekStreak} wks",
-            label = "Weekly streak",
-            modifier = Modifier.weight(1f),
+    val stats = state.stats
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            StatTile(value = "${state.workoutsInRange}", label = rangeLabel, modifier = Modifier.weight(1f))
+            StatTile(value = "${stats.current}", label = "Streak", modifier = Modifier.weight(1f))
+            StatTile(value = "${stats.best}", label = "Best streak", modifier = Modifier.weight(1f))
+            StatTile(value = "${stats.thisWeek}/${stats.goalPerWeek}", label = "This week", modifier = Modifier.weight(1f))
+        }
+        Text(
+            streakHint(stats),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-private fun days(count: Int) = if (count == 1) "1 day" else "$count days"
+/** Explains the weekly-goal streak in one line. */
+private fun streakHint(stats: StreakStats): String {
+    val goal = if (stats.goalPerWeek == 1) "1 workout a week" else "${stats.goalPerWeek} workouts a week"
+    val rest = when {
+        stats.goalPerWeek == 7 -> "Every day counts toward the streak."
+        stats.restDaysLeft == 0 -> "No rest days left this week: skip another day and the streak resets."
+        stats.restDaysLeft == 1 -> "1 rest day left this week without breaking the streak."
+        else -> "${stats.restDaysLeft} rest days left this week without breaking the streak."
+    }
+    return "Streak counts workouts toward your goal of $goal (change it in Settings). $rest"
+}
 
 @Composable
 private fun StatTile(value: String, label: String, modifier: Modifier = Modifier) {

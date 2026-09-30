@@ -3,6 +3,7 @@ package com.eplico.openfit
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -63,7 +64,7 @@ class AppSmokeTest {
 
         compose.onNodeWithText("Calendar").performClick()
         waitFor(hasText("Best streak"))
-        waitFor(hasText("1 day"))
+        waitFor(hasText("1/3")) // this week: 1 of the default 3 workouts
         compose.onNodeWithText("Year").performClick()
         waitFor(hasText("This year"))
         compose.onNodeWithText("Lifetime").performClick()
@@ -74,7 +75,66 @@ class AppSmokeTest {
 
         compose.onNodeWithText("Settings").performClick()
         waitFor(hasText("Default unit"))
+        waitFor(hasText("Accent colour"))
+        waitFor(hasText("Workouts per week"))
         waitFor(hasText("Save spreadsheet"))
         waitFor(hasText("Import spreadsheet"))
+    }
+
+    @Test
+    fun logARunThenCreateAnExerciseOnTheNewExercisePage() {
+        waitFor(hasText("Nothing logged for this day"))
+        compose.onAllNodesWithText("Add exercise").onFirst().performClick()
+        waitFor(hasSetTextAction())
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("running")
+        waitFor(hasText("Running"))
+        compose.onNodeWithText("Running").performClick()
+
+        // A distance + time exercise: no weight or reps, just distance, minutes and seconds.
+        waitFor(hasText("Distance (", substring = true))
+        waitFor(hasText("Time"))
+        compose.onAllNodesWithText("Reps").assertCountEquals(0)
+        val fields = compose.onAllNodes(hasSetTextAction())
+        fields.assertCountEquals(3)
+        fields[0].performTextInput("5")
+        fields[1].performTextInput("25")
+        fields[2].performTextInput("30")
+        compose.onNodeWithText("Save set").performScrollTo().performClick()
+        waitFor(hasText("in 25:30", substring = true))
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        waitFor(hasText("Running"))
+
+        // Create a brand-new exercise and land straight in its log.
+        compose.onAllNodesWithText("Add exercise").onFirst().performClick()
+        waitFor(hasSetTextAction())
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Sled Push")
+        waitFor(hasText("Create \"Sled Push\""))
+        compose.onNodeWithText("Create \"Sled Push\"").performClick()
+        waitFor(hasText("Save exercise"))
+        compose.onNodeWithText("Distance").performClick()
+        waitFor(hasText("Add to today's workout"))
+        compose.onNodeWithText("Save exercise").performScrollTo().performClick()
+
+        waitFor(hasText("Save set"))
+        waitFor(hasText("Sled Push"))
+        waitFor(hasText("Distance (", substring = true))
+        compose.onAllNodesWithText("Weight", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun manageCategoriesFromSettings() {
+        waitFor(hasText("Nothing logged for this day"))
+        compose.onNodeWithText("Settings").performClick()
+        waitFor(hasText("Categories"))
+        compose.onNodeWithText("Categories").performScrollTo().performClick()
+        waitFor(hasText("Cardio"))
+        waitFor(hasText("where exercises go when their category is deleted", substring = true))
+
+        compose.onNodeWithText("New category").performClick()
+        waitFor(hasSetTextAction())
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Mobility")
+        compose.onNodeWithText("Create").performClick()
+        waitFor(hasText("Mobility"))
     }
 }

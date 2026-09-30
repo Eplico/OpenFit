@@ -6,9 +6,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.eplico.openfit.core.AccentColor
+import com.eplico.openfit.core.DistanceUnit
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.data.BackupManager
 import com.eplico.openfit.data.ImportResult
+import com.eplico.openfit.data.PreparedImport
 import com.eplico.openfit.data.SettingsRepository
 import com.eplico.openfit.data.UserSettings
 import kotlinx.coroutines.CancellationException
@@ -37,6 +40,18 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setIncrement(unit, value) }
     }
 
+    fun setDistanceUnit(unit: DistanceUnit) {
+        viewModelScope.launch { repository.setDistanceUnit(unit) }
+    }
+
+    fun setAccent(accent: AccentColor) {
+        viewModelScope.launch { repository.setAccent(accent) }
+    }
+
+    fun setWeeklyGoal(goal: Int) {
+        viewModelScope.launch { repository.setWeeklyGoal(goal) }
+    }
+
     // ---- Spreadsheet export / import ----
 
     /** True while an export or import is running. */
@@ -49,6 +64,10 @@ class SettingsViewModel(
 
     /** Set when an import finishes; the screen shows a summary dialog. */
     var importResult by mutableStateOf<ImportResult?>(null)
+        private set
+
+    /** A read spreadsheet that uses categories the app doesn't have; the screen asks what to do. */
+    var pendingImport by mutableStateOf<PreparedImport?>(null)
         private set
 
     /** Set when a spreadsheet is ready to hand to the share sheet. */
@@ -67,7 +86,23 @@ class SettingsViewModel(
     }
 
     fun importFrom(uri: Uri) = runTask("Import failed") {
-        importResult = backups.importFrom(uri)
+        val prepared = backups.prepareImport(uri)
+        if (prepared.unknownCategories.isEmpty()) {
+            importResult = backups.commitImport(prepared, addUnknownCategories = true)
+        } else {
+            pendingImport = prepared
+        }
+    }
+
+    /** Finishes a [pendingImport]: create its new categories, or file those exercises under "Other". */
+    fun resolvePendingImport(addUnknownCategories: Boolean) {
+        val prepared = pendingImport ?: return
+        pendingImport = null
+        runTask("Import failed") { importResult = backups.commitImport(prepared, addUnknownCategories) }
+    }
+
+    fun cancelPendingImport() {
+        pendingImport = null
     }
 
     fun messageShown() {

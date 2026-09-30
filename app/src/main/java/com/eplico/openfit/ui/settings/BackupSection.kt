@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.eplico.openfit.core.backup.Xlsx
 import com.eplico.openfit.data.BackupManager
+import com.eplico.openfit.data.DefaultExercises
 import com.eplico.openfit.data.ImportResult
 import com.eplico.openfit.data.ImportSummary
 import com.eplico.openfit.ui.common.AppIcons
@@ -90,9 +92,60 @@ fun BackupSection(viewModel: SettingsViewModel) {
         )
     }
 
+    viewModel.pendingImport?.let { prepared ->
+        UnknownCategoriesDialog(
+            categories = prepared.unknownCategories,
+            onAdd = { viewModel.resolvePendingImport(addUnknownCategories = true) },
+            onUseOther = { viewModel.resolvePendingImport(addUnknownCategories = false) },
+            onCancel = viewModel::cancelPendingImport,
+        )
+    }
+
     viewModel.importResult?.let { result ->
         ImportResultDialog(result, onDismiss = viewModel::importResultShown)
     }
+}
+
+@Composable
+private fun UnknownCategoriesDialog(
+    categories: List<String>,
+    onAdd: () -> Unit,
+    onUseOther: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("New categories") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    if (categories.size == 1) {
+                        "This spreadsheet uses a category OpenFit doesn't have yet:"
+                    } else {
+                        "This spreadsheet uses ${categories.size} categories OpenFit doesn't have yet:"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                categories.take(MAX_WARNINGS_SHOWN).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                if (categories.size > MAX_WARNINGS_SHOWN) {
+                    Text("…and ${categories.size - MAX_WARNINGS_SHOWN} more", style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Add them to your categories, or put those exercises in \"${DefaultExercises.OTHER}\"?",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onAdd) { Text("Add categories") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+                TextButton(onClick = onUseOther) { Text("Use ${DefaultExercises.OTHER}") }
+            }
+        },
+    )
 }
 
 @Composable
@@ -159,6 +212,7 @@ internal fun summaryLines(summary: ImportSummary): List<String> {
         lines += "Added ${plural(summary.setsAdded, "set")} across ${plural(summary.daysWithNewSets, "day")}."
     }
     if (summary.presetsAdded > 0) lines += "Added ${plural(summary.presetsAdded, "preset")}."
+    if (summary.categoriesAdded > 0) lines += "Added ${plural(summary.categoriesAdded, "category", "categories")}."
     if (summary.exercisesAdded > 0) lines += "Added ${plural(summary.exercisesAdded, "new exercise")}."
     if (lines.isEmpty()) lines += "Nothing new to add. Everything in this file is already in the app."
     if (summary.exerciseDaysSkipped > 0) {

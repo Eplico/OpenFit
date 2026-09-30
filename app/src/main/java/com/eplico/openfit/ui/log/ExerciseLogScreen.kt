@@ -50,18 +50,28 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.eplico.openfit.core.DistanceUnit
+import com.eplico.openfit.core.Durations
+import com.eplico.openfit.core.Measure
+import com.eplico.openfit.core.SetFormat
+import com.eplico.openfit.core.SetValues
 import com.eplico.openfit.core.WeightMath
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
+import com.eplico.openfit.data.Exercise
 import com.eplico.openfit.data.HistorySet
 import com.eplico.openfit.data.SetEntry
 import com.eplico.openfit.data.values
 import com.eplico.openfit.ui.AppViewModels
+import com.eplico.openfit.ui.common.ChoiceToggle
 import com.eplico.openfit.ui.common.StepperField
+import com.eplico.openfit.ui.common.TimeStepperField
 import com.eplico.openfit.ui.common.UnitToggle
-import com.eplico.openfit.ui.common.primaryLine
-import com.eplico.openfit.ui.common.ratioLine
+import com.eplico.openfit.ui.common.describe
+import com.eplico.openfit.ui.common.detail
 import com.eplico.openfit.ui.common.relativeLabel
 import com.eplico.openfit.ui.common.shortLabel
+import com.eplico.openfit.ui.common.weightUnitOn
 
 @Composable
 fun ExerciseLogScreen(
@@ -114,21 +124,21 @@ fun ExerciseLogScreen(
             }
             if (entry == null) return@Column
             when (tab) {
-                0 -> TrackTab(viewModel, entry.sets, entry.workout.unit)
-                else -> HistoryTab(history)
+                0 -> TrackTab(viewModel, entry.exercise, entry.sets, entry.workout.unit)
+                else -> HistoryTab(entry.exercise, history)
             }
         }
     }
 }
 
 @Composable
-private fun TrackTab(viewModel: ExerciseLogViewModel, sets: List<SetEntry>, unit: WeightUnit) {
+private fun TrackTab(viewModel: ExerciseLogViewModel, exercise: Exercise, sets: List<SetEntry>, workoutUnit: WeightUnit) {
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        item { EntryCard(viewModel, unit) }
+        item { EntryCard(viewModel, exercise, workoutUnit) }
         item {
             Text(
                 if (sets.isEmpty()) "No sets logged yet" else "Sets",
@@ -140,8 +150,9 @@ private fun TrackTab(viewModel: ExerciseLogViewModel, sets: List<SetEntry>, unit
         itemsIndexed(sets, key = { _, set -> set.id }) { index, set ->
             LoggedSetRow(
                 number = index + 1,
+                exercise = exercise,
                 set = set,
-                unit = unit,
+                workoutUnit = workoutUnit,
                 selected = viewModel.editingSetId == set.id,
                 onClick = { viewModel.toggleSelect(set.id) },
             )
@@ -160,8 +171,10 @@ private fun TrackTab(viewModel: ExerciseLogViewModel, sets: List<SetEntry>, unit
 }
 
 @Composable
-private fun EntryCard(viewModel: ExerciseLogViewModel, unit: WeightUnit) {
+private fun EntryCard(viewModel: ExerciseLogViewModel, exercise: Exercise, workoutUnit: WeightUnit) {
     val editing = viewModel.editingSetId != null
+    val measure = exercise.measure
+    val weightUnit = exercise.weightUnitOn(workoutUnit)
     Card(Modifier.fillMaxWidth()) {
         Column(
             Modifier.padding(16.dp),
@@ -173,47 +186,93 @@ private fun EntryCard(viewModel: ExerciseLogViewModel, unit: WeightUnit) {
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                UnitToggle(unit = unit, onUnitChange = viewModel::setUnit, modifier = Modifier.width(132.dp))
+                when (exercise.weightMode) {
+                    WeightMode.WORKOUT -> UnitToggle(unit = workoutUnit, onUnitChange = viewModel::setUnit, modifier = Modifier.width(132.dp))
+                    WeightMode.KG, WeightMode.LB -> Text(
+                        "Always in ${exercise.weightMode.label}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    WeightMode.NONE -> Unit
+                }
             }
 
-            StepperField(
-                label = "Weight (${unit.label})",
-                value = viewModel.weightText,
-                onValueChange = viewModel::onWeightChange,
-                onDecrement = { viewModel.stepWeight(-1) },
-                onIncrement = { viewModel.stepWeight(1) },
-                isError = viewModel.weight == null,
-            )
+            if (weightUnit != null) {
+                StepperField(
+                    label = "Weight (${weightUnit.label})",
+                    value = viewModel.weightText,
+                    onValueChange = viewModel::onWeightChange,
+                    onDecrement = { viewModel.stepWeight(-1) },
+                    onIncrement = { viewModel.stepWeight(1) },
+                    isError = viewModel.weight == null,
+                )
+                StepperField(
+                    label = "Ratio",
+                    value = viewModel.ratioText,
+                    onValueChange = viewModel::onRatioChange,
+                    onDecrement = { viewModel.stepRatio(-1) },
+                    onIncrement = { viewModel.stepRatio(1) },
+                    isError = viewModel.ratio == null,
+                    labelActions = {
+                        ExerciseLogViewModel.QUICK_RATIOS.forEach { quick ->
+                            FilterChip(
+                                selected = viewModel.ratio == quick,
+                                onClick = { viewModel.setRatio(quick) },
+                                label = { Text("${WeightMath.format(quick)}×") },
+                            )
+                        }
+                    },
+                )
+                CalculatedWeight(viewModel.calculatedWeight, viewModel.ratio, weightUnit)
+            }
 
-            StepperField(
-                label = "Ratio",
-                value = viewModel.ratioText,
-                onValueChange = viewModel::onRatioChange,
-                onDecrement = { viewModel.stepRatio(-1) },
-                onIncrement = { viewModel.stepRatio(1) },
-                isError = viewModel.ratio == null,
-                labelActions = {
-                    ExerciseLogViewModel.QUICK_RATIOS.forEach { quick ->
-                        FilterChip(
-                            selected = viewModel.ratio == quick,
-                            onClick = { viewModel.setRatio(quick) },
-                            label = { Text("${WeightMath.format(quick)}×") },
+            if (measure.usesReps) {
+                StepperField(
+                    label = "Reps",
+                    value = viewModel.repsText,
+                    onValueChange = viewModel::onRepsChange,
+                    onDecrement = { viewModel.stepReps(-1) },
+                    onIncrement = { viewModel.stepReps(1) },
+                    decimal = false,
+                )
+            }
+
+            if (measure.usesDistance) {
+                StepperField(
+                    label = "Distance (${viewModel.distanceUnit.label})",
+                    value = viewModel.distanceText,
+                    onValueChange = viewModel::onDistanceChange,
+                    onDecrement = { viewModel.stepDistance(-1) },
+                    onIncrement = { viewModel.stepDistance(1) },
+                    isError = viewModel.distance == null,
+                    labelActions = {
+                        ChoiceToggle(
+                            options = DistanceUnit.entries,
+                            selected = viewModel.distanceUnit,
+                            label = { it.label },
+                            onSelect = viewModel::onDistanceUnitChange,
+                            modifier = Modifier.width(120.dp),
                         )
-                    }
-                },
-            )
+                    },
+                )
+            }
 
-            CalculatedWeight(viewModel.calculatedWeight, viewModel.ratio, unit)
+            if (measure.usesTime) {
+                TimeStepperField(
+                    label = "Time",
+                    minutes = viewModel.minutesText,
+                    seconds = viewModel.secondsText,
+                    onMinutesChange = viewModel::onMinutesChange,
+                    onSecondsChange = viewModel::onSecondsChange,
+                    onDecrement = { viewModel.stepTime(-1) },
+                    onIncrement = { viewModel.stepTime(1) },
+                    isError = viewModel.durationSeconds == null,
+                )
+            }
 
-            StepperField(
-                label = "Reps",
-                value = viewModel.repsText,
-                onValueChange = viewModel::onRepsChange,
-                onDecrement = { viewModel.stepReps(-1) },
-                onIncrement = { viewModel.stepReps(1) },
-                decimal = false,
-            )
-
+            viewModel.pace?.let { pace ->
+                Text("Pace $pace", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
             viewModel.prefillNote?.let { note ->
                 Text(
                     note,
@@ -261,11 +320,7 @@ private fun CalculatedWeight(calculated: Double?, ratio: Double?, unit: WeightUn
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    if (ratio != null && ratio != WeightMath.DEFAULT_RATIO) {
-                        "weight × ${WeightMath.format(ratio, 3)}"
-                    } else {
-                        "weight × 1"
-                    },
+                    "weight × ${WeightMath.format(ratio ?: WeightMath.DEFAULT_RATIO, 3)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -283,12 +338,14 @@ private fun CalculatedWeight(calculated: Double?, ratio: Double?, unit: WeightUn
 @Composable
 private fun LoggedSetRow(
     number: Int,
+    exercise: Exercise,
     set: SetEntry,
-    unit: WeightUnit,
+    workoutUnit: WeightUnit,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
     val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+    val shownUnit = exercise.weightUnitOn(workoutUnit)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -307,12 +364,12 @@ private fun LoggedSetRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(set.values.primaryLine(unit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            set.values.ratioLine(unit)?.let {
+            Text(exercise.describe(set.values, workoutUnit), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            exercise.detail(set.values, workoutUnit)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (set.unit != unit) {
+        if (shownUnit != null && set.weight > 0.0 && set.unit != shownUnit) {
             Text(
                 "logged in ${set.unit.label}",
                 style = MaterialTheme.typography.labelSmall,
@@ -323,7 +380,7 @@ private fun LoggedSetRow(
 }
 
 @Composable
-private fun HistoryTab(history: List<HistorySet>) {
+private fun HistoryTab(exercise: Exercise, history: List<HistorySet>) {
     if (history.isEmpty()) {
         Text(
             "No history yet. Sets you log for this exercise will show up here.",
@@ -344,19 +401,14 @@ private fun HistoryTab(history: List<HistorySet>) {
     ) {
         days.forEach { (date, sets) ->
             item(key = date.toEpochDay()) {
-                val unit = sets.first().workoutUnit
+                val workoutUnit = sets.first().workoutUnit
                 val values = sets.map { it.set.values }
-                val best = values.maxOf { it.estimatedOneRepMaxIn(unit) }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(date.shortLabel(), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                            if (best > 0) {
-                                Text(
-                                    "est. 1RM ${WeightMath.formatWeight(WeightMath.round(best, 1), unit)}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                            daySummary(exercise, values, workoutUnit)?.let { summary ->
+                                Text(summary, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -370,8 +422,8 @@ private fun HistoryTab(history: List<HistorySet>) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.width(24.dp),
                                 )
-                                Text(set.primaryLine(unit), style = MaterialTheme.typography.bodyMedium)
-                                set.ratioLine(unit)?.let {
+                                Text(exercise.describe(set, workoutUnit), style = MaterialTheme.typography.bodyMedium)
+                                exercise.detail(set, workoutUnit)?.let {
                                     Spacer(Modifier.width(8.dp))
                                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                 }
@@ -382,4 +434,24 @@ private fun HistoryTab(history: List<HistorySet>) {
             }
         }
     }
+}
+
+/** Headline for a day in the history: best estimated 1RM for lifts, totals for cardio. */
+private fun daySummary(exercise: Exercise, sets: List<SetValues>, workoutUnit: WeightUnit): String? {
+    val unit = exercise.weightUnitOn(workoutUnit)
+    if (exercise.measure == Measure.REPS) {
+        if (unit == null) return "${sets.sumOf { it.reps }} reps total"
+        val best = sets.maxOf { it.estimatedOneRepMaxIn(unit) }
+        return if (best > 0) "est. 1RM ${WeightMath.formatWeight(WeightMath.round(best, 1), unit)}" else null
+    }
+    val parts = buildList {
+        if (exercise.measure.usesDistance) {
+            val distanceUnit = sets.firstOrNull { it.distance > 0.0 }?.distanceUnit ?: DistanceUnit.KM
+            val total = sets.sumOf { it.distanceUnit.convert(it.distance, distanceUnit) }
+            if (total > 0.0) add(SetFormat.distance(WeightMath.round(total, 2), distanceUnit))
+        }
+        val seconds = sets.sumOf { it.durationSeconds }
+        if (seconds > 0) add(Durations.format(seconds))
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "Total ")
 }

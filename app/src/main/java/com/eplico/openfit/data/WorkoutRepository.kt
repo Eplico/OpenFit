@@ -1,7 +1,9 @@
 package com.eplico.openfit.data
 
 import androidx.room.withTransaction
+import com.eplico.openfit.core.Measure
 import com.eplico.openfit.core.SetValues
+import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.core.backup.Backup
 import com.eplico.openfit.core.backup.BackupExercise
@@ -17,6 +19,7 @@ class WorkoutRepository(
     private val settings: SettingsRepository,
 ) {
     private val exerciseDao = db.exerciseDao()
+    private val categoryDao = db.categoryDao()
     private val workoutDao = db.workoutDao()
     private val setDao = db.setDao()
     private val presetDao = db.presetDao()
@@ -25,29 +28,92 @@ class WorkoutRepository(
 
     val exercises: Flow<List<Exercise>> = exerciseDao.observeAll()
 
-    suspend fun createExercise(name: String, category: String): Result<Long> {
+    suspend fun getExercise(id: Long): Exercise? = exerciseDao.get(id)
+
+    suspend fun createExercise(
+        name: String,
+        category: String,
+        measure: Measure = Measure.REPS,
+        weightMode: WeightMode = WeightMode.WORKOUT,
+    ): Result<Long> = db.withTransaction {
         val cleanName = name.trim()
-        val cleanCategory = category.trim().ifEmpty { "Other" }
-        if (cleanName.isEmpty()) return Result.failure(IllegalArgumentException("Name can't be empty"))
+        if (cleanName.isEmpty()) return@withTransaction Result.failure(IllegalArgumentException("Name can't be empty"))
         if (exerciseDao.findByName(cleanName) != null) {
-            return Result.failure(IllegalArgumentException("\"$cleanName\" already exists"))
+            return@withTransaction Result.failure(IllegalArgumentException("\"$cleanName\" already exists"))
         }
-        return Result.success(exerciseDao.insert(Exercise(name = cleanName, category = cleanCategory)))
+        val exercise = Exercise(name = cleanName, category = ensureCategory(category), measure = measure, weightMode = weightMode)
+        Result.success(exerciseDao.insert(exercise))
     }
 
-    suspend fun updateExercise(exercise: Exercise): Result<Unit> {
-        val clean = exercise.copy(name = exercise.name.trim(), category = exercise.category.trim().ifEmpty { "Other" })
-        if (clean.name.isEmpty()) return Result.failure(IllegalArgumentException("Name can't be empty"))
-        val clash = exerciseDao.findByName(clean.name)
-        if (clash != null && clash.id != clean.id) {
-            return Result.failure(IllegalArgumentException("\"${clean.name}\" already exists"))
+    suspend fun updateExercise(exercise: Exercise): Result<Unit> = db.withTransaction {
+        val cleanName = exercise.name.trim()
+        if (cleanName.isEmpty()) return@withTransaction Result.failure(IllegalArgumentException("Name can't be empty"))
+        val clash = exerciseDao.findByName(cleanName)
+        if (clash != null && clash.id != exercise.id) {
+            return@withTransaction Result.failure(IllegalArgumentException("\"$cleanName\" already exists"))
         }
-        exerciseDao.update(clean)
-        return Result.success(Unit)
+        exerciseDao.update(exercise.copy(name = cleanName, category = ensureCategory(exercise.category)))
+        Result.success(Unit)
     }
 
     /** Deletes the exercise along with every set ever logged for it. */
     suspend fun deleteExercise(exercise: Exercise) = exerciseDao.delete(exercise)
+
+    // ---- Categories ----
+
+    val categories: Flow<List<CategoryWithCount>> = categoryDao.observeWithCounts()
+
+    /** Returns the stored spelling of [name], creating the category if it doesn't exist. Blank means "Other". */
+    private suspend fun ensureCategory(name: String): String {
+        val clean = name.trim().ifEmpty { DefaultExercises.OTHER }
+        categoryDao.findByName(clean)?.let { return it.name }
+        categoryDao.insert(Category(name = clean, position = categoryDao.maxPosition() + 1))
+        return clean
+    }
+
+    suspend fun createCategory(name: String): Result<Long> = db.withTransaction {
+        val clean = name.trim()
+        when {
+            clean.isEmpty() -> Result.failure(IllegalArgumentException("Name can't be empty"))
+            categoryDao.findByName(clean) != null -> Result.failure(IllegalArgumentException("\"$clean\" already exists"))
+            else -> Result.success(categoryDao.insert(Category(name = clean, position = categoryDao.maxPosition() + 1)))
+        }
+    }
+
+    /** Renames a category and moves its exercises along with it. */
+    suspend fun renameCategory(id: Long, name: String): Result<Unit> = db.withTransaction {
+        val clean = name.trim()
+        val category = categoryDao.get(id) ?: return@withTransaction Result.failure(IllegalArgumentException("Category not found"))
+        val clash = categoryDao.findByName(clean)
+        when {
+            clean.isEmpty() -> Result.failure(IllegalArgumentException("Name can't be empty"))
+            clash != null && clash.id != id -> Result.failure(IllegalArgumentException("\"$clean\" already exists"))
+            else -> {
+                categoryDao.rename(id, clean)
+                exerciseDao.moveCategory(category.name, clean)
+                Result.success(Unit)
+            }
+        }
+    }
+
+    /** Deletes a category; its exercises move to "Other". "Other" itself can't be deleted. */
+    suspend fun deleteCategory(id: Long): Result<Unit> = db.withTransaction {
+        val category = categoryDao.get(id) ?: return@withTransaction Result.success(Unit)
+        if (category.name.equals(DefaultExercises.OTHER, ignoreCase = true)) {
+            return@withTransaction Result.failure(IllegalArgumentException("\"${category.name}\" can't be deleted"))
+        }
+        val other = ensureCategory(DefaultExercises.OTHER)
+        exerciseDao.moveCategory(category.name, other)
+        categoryDao.delete(id)
+        Result.success(Unit)
+    }
+
+    suspend fun moveCategory(id: Long, delta: Int) = db.withTransaction {
+        val ordered = categoryDao.getAll().map { it.id }.toMutableList()
+        if (reorder(ordered, id, delta)) {
+            ordered.forEachIndexed { index, categoryId -> categoryDao.setPosition(categoryId, index) }
+        }
+    }
 
     // ---- Workouts ----
 
@@ -147,12 +213,23 @@ class WorkoutRepository(
                 reps = values.reps,
                 position = setDao.maxPosition(workoutExerciseId) + 1,
                 loggedAt = System.currentTimeMillis(),
+                durationSeconds = values.durationSeconds,
+                distance = values.distance,
+                distanceUnit = values.distanceUnit,
             ),
         )
     }
 
     suspend fun updateSet(set: SetEntry, values: SetValues) = setDao.update(
-        set.copy(weight = values.weight, unit = values.unit, ratio = values.ratio, reps = values.reps),
+        set.copy(
+            weight = values.weight,
+            unit = values.unit,
+            ratio = values.ratio,
+            reps = values.reps,
+            durationSeconds = values.durationSeconds,
+            distance = values.distance,
+            distanceUnit = values.distanceUnit,
+        ),
     )
 
     suspend fun deleteSet(setId: Long) = setDao.delete(setId)
@@ -209,15 +286,54 @@ class WorkoutRepository(
             presets = presetDao.getAll().map { preset ->
                 BackupPreset(preset.preset.name, preset.orderedItems.map { it.exercise.toBackup() })
             },
+            categories = categoryDao.getAll().map { it.name },
         )
+    }
+
+    /**
+     * Categories the import would introduce: ones named in the file's Categories sheet or used by
+     * exercises the app doesn't have yet, that don't exist in the app. Exercises the app already
+     * has keep their own category, so theirs don't count.
+     */
+    suspend fun unknownCategories(backup: Backup): List<String> {
+        val known = categoryDao.getAll().map { it.name.lowercase() }.toSet()
+        val existingExercises = exerciseDao.getAll().map { it.name.lowercase() }.toSet()
+        val newExercises = (
+            backup.exercises +
+                backup.workouts.flatMap { day -> day.exercises.map { it.exercise } } +
+                backup.presets.flatMap { it.exercises }
+            ).filter { it.name.trim().lowercase() !in existingExercises }
+        return (backup.categories + newExercises.map { it.category })
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it.lowercase() !in known }
+            .distinctBy { it.lowercase() }
     }
 
     /**
      * Merges [backup] into the database without deleting anything, so importing the same file twice
      * is harmless. Exercises and presets are matched by name (ignoring case). For each exercise on
      * each day, sets are only added if the app has no sets logged for it yet.
+     *
+     * Categories the app doesn't have (see [unknownCategories]) are created when [addUnknownCategories]
+     * is true; otherwise new exercises in them go to "Other".
      */
-    suspend fun importBackup(backup: Backup): ImportSummary = db.withTransaction {
+    suspend fun importBackup(backup: Backup, addUnknownCategories: Boolean = true): ImportSummary = db.withTransaction {
+        val knownCategories = HashMap<String, String>()
+        categoryDao.getAll().forEach { knownCategories[it.name.lowercase()] = it.name }
+        var categoriesAdded = 0
+
+        suspend fun categoryFor(raw: String): String {
+            val name = raw.trim()
+            if (name.isNotEmpty()) knownCategories[name.lowercase()]?.let { return it }
+            if (name.isEmpty() || !addUnknownCategories) return ensureCategory(DefaultExercises.OTHER)
+            val created = ensureCategory(name)
+            knownCategories[name.lowercase()] = created
+            categoriesAdded++
+            return created
+        }
+
+        if (addUnknownCategories) backup.categories.filter { it.isNotBlank() }.forEach { categoryFor(it) }
+
         val exerciseIds = HashMap<String, Long>()
         exerciseDao.getAll().forEach { exerciseIds[it.name.lowercase()] = it.id }
         var exercisesAdded = 0
@@ -225,7 +341,14 @@ class WorkoutRepository(
         suspend fun exerciseId(exercise: BackupExercise): Long {
             val name = exercise.name.trim()
             exerciseIds[name.lowercase()]?.let { return it }
-            val id = exerciseDao.insert(Exercise(name = name, category = exercise.category.trim().ifEmpty { "Other" }))
+            val id = exerciseDao.insert(
+                Exercise(
+                    name = name,
+                    category = categoryFor(exercise.category),
+                    measure = exercise.measure,
+                    weightMode = exercise.weightMode,
+                ),
+            )
             exerciseIds[name.lowercase()] = id
             exercisesAdded++
             return id
@@ -261,6 +384,9 @@ class WorkoutRepository(
                             reps = set.reps,
                             position = index,
                             loggedAt = now,
+                            durationSeconds = set.durationSeconds,
+                            distance = set.distance,
+                            distanceUnit = set.distanceUnit,
                         ),
                     )
                 }
@@ -294,10 +420,12 @@ class WorkoutRepository(
             presetsAdded = presetsAdded,
             presetsSkipped = presetsSkipped,
             exerciseDaysSkipped = skipped,
+            categoriesAdded = categoriesAdded,
         )
     }
 
-    private fun Exercise.toBackup() = BackupExercise(name = name, category = category)
+    private fun Exercise.toBackup() =
+        BackupExercise(name = name, category = category, measure = measure, weightMode = weightMode)
 
     private fun reorder(ids: MutableList<Long>, id: Long, delta: Int): Boolean {
         val from = ids.indexOf(id)

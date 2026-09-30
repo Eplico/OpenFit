@@ -7,53 +7,71 @@ import java.time.temporal.TemporalAdjusters
 data class StreakStats(
     /** Number of distinct days with a workout. */
     val totalDays: Int,
-    /** Consecutive workout days ending today (or yesterday, if today isn't logged yet). */
-    val currentStreak: Int,
-    val longestStreak: Int,
-    /** Consecutive weeks with at least one workout, ending this week (or last week). */
-    val currentWeekStreak: Int,
+    /** Workouts in the current streak. Rest days never add to it. */
+    val current: Int,
+    /** The longest the streak has ever been. */
+    val best: Int,
+    val goalPerWeek: Int,
+    /** Workouts so far in the current week. */
+    val thisWeek: Int,
+    /** Rest days that can still be taken this week without resetting the streak. */
+    val restDaysLeft: Int,
 )
 
+/**
+ * A weekly-goal streak. With a goal of N workouts a week you may rest up to 7 − N days in each
+ * week (weeks start on the chosen day). The streak counts workouts; it resets only when you rest
+ * more days in a week than that. Today isn't a rest day until it's over, and days before your
+ * first workout don't count against you.
+ */
 object Streaks {
+    const val DEFAULT_GOAL = 3
 
     fun compute(
         workoutDays: Collection<LocalDate>,
         today: LocalDate,
+        goalPerWeek: Int = DEFAULT_GOAL,
         firstDayOfWeek: DayOfWeek = DayOfWeek.MONDAY,
     ): StreakStats {
+        val goal = goalPerWeek.coerceIn(1, 7)
+        val allowance = 7 - goal
         val days = workoutDays.filter { !it.isAfter(today) }.toSortedSet()
-        if (days.isEmpty()) return StreakStats(0, 0, 0, 0)
-
-        var longest = 0
-        var run = 0
-        var previous: LocalDate? = null
-        for (day in days) {
-            run = if (previous != null && previous.plusDays(1) == day) run + 1 else 1
-            longest = maxOf(longest, run)
-            previous = day
-        }
+        val thisWeekStart = today.with(TemporalAdjusters.previousOrSame(firstDayOfWeek))
+        val thisWeek = days.count { !it.isBefore(thisWeekStart) }
+        if (days.isEmpty()) return StreakStats(0, 0, 0, goal, 0, allowance)
 
         var current = 0
-        var cursor = if (today in days) today else today.minusDays(1)
-        while (cursor in days) {
-            current++
-            cursor = cursor.minusDays(1)
+        var best = 0
+        var restUsed = 0
+        var week: LocalDate? = null
+        var day = days.first()
+        while (!day.isAfter(today)) {
+            val weekStart = day.with(TemporalAdjusters.previousOrSame(firstDayOfWeek))
+            if (weekStart != week) {
+                week = weekStart
+                restUsed = 0
+            }
+            if (day in days) {
+                current++
+                best = maxOf(best, current)
+            } else if (day != today) {
+                restUsed++
+                if (restUsed > allowance) {
+                    // Too many rest days this week: the streak starts over from the next workout.
+                    current = 0
+                    restUsed = 0
+                }
+            }
+            day = day.plusDays(1)
         }
-
-        val weeks = days.map { it.with(TemporalAdjusters.previousOrSame(firstDayOfWeek)) }.toSet()
-        val thisWeek = today.with(TemporalAdjusters.previousOrSame(firstDayOfWeek))
-        var weekCursor = if (thisWeek in weeks) thisWeek else thisWeek.minusWeeks(1)
-        var weekStreak = 0
-        while (weekCursor in weeks) {
-            weekStreak++
-            weekCursor = weekCursor.minusWeeks(1)
-        }
-
+        val restLeft = if (week == thisWeekStart) allowance - restUsed else allowance
         return StreakStats(
             totalDays = days.size,
-            currentStreak = current,
-            longestStreak = longest,
-            currentWeekStreak = weekStreak,
+            current = current,
+            best = best,
+            goalPerWeek = goal,
+            thisWeek = thisWeek,
+            restDaysLeft = restLeft.coerceAtLeast(0),
         )
     }
 }

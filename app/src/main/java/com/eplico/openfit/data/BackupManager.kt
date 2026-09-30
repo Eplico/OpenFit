@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
 import com.eplico.openfit.core.backup.BackupSpreadsheet
+import com.eplico.openfit.core.backup.ParsedBackup
 import com.eplico.openfit.core.backup.Xlsx
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,6 +24,14 @@ data class ImportSummary(
     val presetsSkipped: Int,
     /** Exercises on a day that already had sets logged in the app; their spreadsheet sets were skipped. */
     val exerciseDaysSkipped: Int,
+    val categoriesAdded: Int = 0,
+)
+
+/** A spreadsheet that has been read but not yet merged in, waiting on the user's category choice. */
+data class PreparedImport(
+    val parsed: ParsedBackup,
+    /** Categories in the file that the app doesn't have yet. */
+    val unknownCategories: List<String>,
 )
 
 data class ImportResult(
@@ -56,11 +65,20 @@ class BackupManager(
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
 
-    /** Reads a spreadsheet from [uri] (from an "open document" picker) and merges it into the database. */
-    suspend fun importFrom(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
+    /** Reads a spreadsheet from [uri] (from an "open document" picker) without changing anything yet. */
+    suspend fun prepareImport(uri: Uri): PreparedImport = withContext(Dispatchers.IO) {
         val parsed = openSpreadsheet(uri).use { BackupSpreadsheet.read(it) }
-        ImportResult(repository.importBackup(parsed.backup), parsed.warnings)
+        PreparedImport(parsed, repository.unknownCategories(parsed.backup))
     }
+
+    /** Merges a prepared spreadsheet into the database. */
+    suspend fun commitImport(prepared: PreparedImport, addUnknownCategories: Boolean): ImportResult =
+        withContext(Dispatchers.IO) {
+            ImportResult(repository.importBackup(prepared.parsed.backup, addUnknownCategories), prepared.parsed.warnings)
+        }
+
+    /** Reads and merges in one go, adding any unknown categories. */
+    suspend fun importFrom(uri: Uri): ImportResult = commitImport(prepareImport(uri), addUnknownCategories = true)
 
     private fun openSpreadsheet(uri: Uri): InputStream {
         val resolver = context.contentResolver
