@@ -11,7 +11,10 @@ import com.eplico.openfit.core.WeightMode
 import com.eplico.openfit.core.WeightUnit
 import com.eplico.openfit.core.backup.Backup
 import com.eplico.openfit.core.backup.BackupExercise
+import com.eplico.openfit.core.backup.BackupPreset
 import com.eplico.openfit.core.backup.BackupSpreadsheet
+import com.eplico.openfit.core.backup.BackupWorkout
+import com.eplico.openfit.core.backup.BackupWorkoutExercise
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -197,5 +200,29 @@ class BackupTest {
         assertEquals(2, summary.categoriesAdded)
         assertEquals("Plyometrics", target.exercises.first().first { it.name == "Box Jump" }.category)
         assertEquals(DefaultExercises.categories + listOf("Recovery", "Plyometrics"), target.categories.first().map { it.category.name })
+    }
+
+    @Test
+    fun oldStarterNamesImportOntoTheRenamedExercises() = runBlocking {
+        val pushdown = BackupExercise("Tricep Pushdown", "Triceps")
+        val backup = Backup(
+            exercises = listOf(pushdown, BackupExercise("Face Pull", "Back")),
+            workouts = listOf(
+                BackupWorkout(day1, WeightUnit.KG, listOf(BackupWorkoutExercise(pushdown, listOf(SetValues(30.0, WeightUnit.KG, reps = 12))))),
+            ),
+            presets = listOf(BackupPreset("Arms", listOf(pushdown))),
+        )
+        assertEquals(emptyList<String>(), target.unknownCategories(backup))
+
+        val summary = target.importBackup(backup)
+        assertEquals(0, summary.exercisesAdded)
+        val names = target.exercises.first().map { it.name }
+        assertTrue("Tricep Pushdown" !in names && "Face Pull" !in names)
+        val sets = target.observeHistory(target.exerciseId("Triceps Pushdown")).first()
+        assertEquals(listOf(SetValues(30.0, WeightUnit.KG, reps = 12)), sets.map { it.set.values })
+        assertEquals(
+            listOf("Triceps Pushdown"),
+            target.presets.first().single().orderedItems.map { it.exercise.name },
+        )
     }
 }

@@ -317,12 +317,9 @@ class WorkoutRepository(
      */
     suspend fun unknownCategories(backup: Backup): List<String> {
         val known = categoryDao.getAll().map { it.name.lowercase() }.toSet()
-        val existingExercises = exerciseDao.getAll().map { it.name.lowercase() }.toSet()
-        val newExercises = (
-            backup.exercises +
-                backup.workouts.flatMap { day -> day.exercises.map { it.exercise } } +
-                backup.presets.flatMap { it.exercises }
-            ).filter { it.name.trim().lowercase() !in existingExercises }
+        val existing = exerciseDao.getAll().map { it.name.lowercase() }.toSet()
+        val existingExercises = existing + renamedStarterAliases(existing, backup).keys
+        val newExercises = backup.allExercises().filter { it.name.trim().lowercase() !in existingExercises }
         return (backup.categories + newExercises.map { it.category })
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.lowercase() !in known }
@@ -337,6 +334,23 @@ class WorkoutRepository(
      * Categories the app doesn't have (see [unknownCategories]) are created when [addUnknownCategories]
      * is true; otherwise new exercises in them go to "Other".
      */
+    private fun Backup.allExercises(): List<BackupExercise> =
+        exercises + workouts.flatMap { day -> day.exercises.map { it.exercise } } + presets.flatMap { it.exercises }
+
+    /**
+     * Spreadsheets saved before some starter exercises were renamed (see
+     * [DefaultExercises.renamedInVersion3]) still use the old names. Maps each old name (lowercase)
+     * to the new one, so its sets land on the renamed exercise instead of a duplicate. Only applies
+     * when the app has the new name but not the old one, and the spreadsheet doesn't use the new name.
+     */
+    private fun renamedStarterAliases(existing: Set<String>, backup: Backup): Map<String, String> {
+        val incoming = backup.allExercises().map { it.name.trim().lowercase() }.toSet()
+        return DefaultExercises.renamedInVersion3
+            .map { (oldName, newName) -> oldName.lowercase() to newName.lowercase() }
+            .filter { (oldName, newName) -> oldName !in existing && newName in existing && newName !in incoming }
+            .toMap()
+    }
+
     suspend fun importBackup(backup: Backup, addUnknownCategories: Boolean = true): ImportSummary = db.withTransaction {
         val knownCategories = HashMap<String, String>()
         categoryDao.getAll().forEach { knownCategories[it.name.lowercase()] = it.name }
@@ -356,6 +370,9 @@ class WorkoutRepository(
 
         val exerciseIds = HashMap<String, Long>()
         exerciseDao.getAll().forEach { exerciseIds[it.name.lowercase()] = it.id }
+        renamedStarterAliases(exerciseIds.keys.toSet(), backup).forEach { (oldName, newName) ->
+            exerciseIds[oldName] = exerciseIds.getValue(newName)
+        }
         var exercisesAdded = 0
 
         suspend fun exerciseId(exercise: BackupExercise): Long {
