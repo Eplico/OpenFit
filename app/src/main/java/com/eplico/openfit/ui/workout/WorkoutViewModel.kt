@@ -14,15 +14,16 @@ import com.eplico.openfit.data.WorkoutEntry
 import com.eplico.openfit.data.WorkoutRepository
 import com.eplico.openfit.data.values
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -43,31 +44,38 @@ data class WorkoutUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkoutViewModel(
     private val repository: WorkoutRepository,
-    settings: SettingsRepository,
+    private val settings: SettingsRepository,
     private val selectedDate: MutableStateFlow<LocalDate>,
 ) : ViewModel() {
 
+    /** The day the screen is on (shared with the calendar, which can jump to any day). */
+    val selectedDay: StateFlow<LocalDate> = selectedDate.asStateFlow()
+
+    /** The selected day's contents (for the menu); each page of the day pager collects its own [day]. */
     val uiState: StateFlow<WorkoutUiState> = selectedDate
-        .flatMapLatest { date ->
-            val dayFlow = repository.observeDay(date)
-            val trophyFlow = dayFlow
-                .map { loaded -> loaded?.entries.orEmpty().map { it.exercise.id }.toSet() }
-                .distinctUntilChanged()
-                .flatMapLatest { repository.observeTrophies(it) }
-            combine(dayFlow, settings.settings, trophyFlow) { day, prefs, trophies ->
-                WorkoutUiState(
-                    date = date,
-                    unit = prefs.defaultUnit,
-                    workoutId = day?.workout?.id,
-                    entries = day?.entries.orEmpty()
-                        .sortedBy { it.entry.position }
-                        .map { entry -> entry.copy(sets = entry.sets.sortedBy { it.position }) },
-                    trophies = trophies,
-                    loading = false,
-                )
-            }
-        }
+        .flatMapLatest { day(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WorkoutUiState(date = selectedDate.value))
+
+    /** Everything shown for [date]: its exercises and sets in order, their trophies, and the totals. */
+    fun day(date: LocalDate): Flow<WorkoutUiState> {
+        val dayFlow = repository.observeDay(date)
+        val trophyFlow = dayFlow
+            .map { loaded -> loaded?.entries.orEmpty().map { it.exercise.id }.toSet() }
+            .distinctUntilChanged()
+            .flatMapLatest { repository.observeTrophies(it) }
+        return combine(dayFlow, settings.settings, trophyFlow) { day, prefs, trophies ->
+            WorkoutUiState(
+                date = date,
+                unit = prefs.defaultUnit,
+                workoutId = day?.workout?.id,
+                entries = day?.entries.orEmpty()
+                    .sortedBy { it.entry.position }
+                    .map { entry -> entry.copy(sets = entry.sets.sortedBy { it.position }) },
+                trophies = trophies,
+                loading = false,
+            )
+        }
+    }
 
     val presets: StateFlow<List<PresetWithItems>> =
         repository.presets.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -79,10 +87,6 @@ class WorkoutViewModel(
     fun messageShown() {
         message = null
     }
-
-    fun previousDay() = selectedDate.update { it.minusDays(1) }
-
-    fun nextDay() = selectedDate.update { it.plusDays(1) }
 
     fun goToToday() {
         selectedDate.value = LocalDate.now()
@@ -96,13 +100,11 @@ class WorkoutViewModel(
         viewModelScope.launch { repository.removeFromWorkout(workoutExerciseId) }
     }
 
-    fun move(workoutExerciseId: Long, delta: Int) {
-        val workoutId = uiState.value.workoutId ?: return
+    fun move(workoutId: Long, workoutExerciseId: Long, delta: Int) {
         viewModelScope.launch { repository.moveInWorkout(workoutId, workoutExerciseId, delta) }
     }
 
-    fun loadPreset(preset: PresetWithItems) {
-        val date = selectedDate.value
+    fun loadPreset(preset: PresetWithItems, date: LocalDate) {
         viewModelScope.launch {
             val added = repository.loadPreset(date, preset.preset.id)
             message = when {

@@ -4,7 +4,7 @@ A simple, offline workout log for Android, in the spirit of FitNotes and Verifit
 
 ## Features
 
-- **Log sets by day.** Each day is a workout: add exercises and log weight × reps for each set. Use the arrows to step between days, or tap the date to jump anywhere.
+- **Log sets by day.** Each day is a workout: add exercises and log weight × reps for each set. Swipe left for the next day and right for the previous one (the page follows your thumb), use the arrows, or tap the date to jump anywhere.
 - **Cardio and timed exercises.** Each exercise tracks *Reps*, *Time*, *Distance* or *Distance + Time* (metres, km or mi), and its weight can start in your default unit, in kg, in lb, or be *None*. A starter **Cardio** category covers running, treadmill, walking, cycling, stationary bike, rowing, swimming, elliptical, stair climber and jump rope, plus Plank under Core. Distance + time sets show your pace.
 - **Your own categories.** Add, rename, reorder or delete categories in Settings → Categories, or create one straight from the new-exercise page. Deleting a category moves its exercises to *Other*.
 - **New exercise page.** Name, category, what to track, weight setting, and "Add to today's workout" in one place. Picking a cardio-style measure switches the weight setting to *None* for you.

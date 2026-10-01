@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -52,11 +54,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,9 +82,19 @@ import com.eplico.openfit.ui.common.describe
 import com.eplico.openfit.ui.common.detail
 import com.eplico.openfit.ui.common.formatTotalWeight
 import com.eplico.openfit.ui.common.relativeLabel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlin.math.abs
+
+/** Pages of the day pager are days since 1970-01-01, up to the year 2200. */
+private val DAY_PAGE_COUNT = LocalDate.of(2200, 1, 1).toEpochDay().toInt()
+
+private fun pageOf(date: LocalDate): Int = date.toEpochDay().toInt().coerceIn(0, DAY_PAGE_COUNT - 1)
+
+private fun dateOf(page: Int): LocalDate = LocalDate.ofEpochDay(page.toLong())
 
 @Composable
 fun WorkoutScreen(
@@ -87,15 +102,34 @@ fun WorkoutScreen(
     onOpenEntry: (Long) -> Unit,
     viewModel: WorkoutViewModel = viewModel(factory = AppViewModels.Factory),
 ) {
+    val selectedDate by viewModel.selectedDay.collectAsStateWithLifecycle()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val presets by viewModel.presets.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var menuOpen by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    var showPresetPicker by rememberSaveable { mutableStateOf(false) }
+    var presetPickerDate by rememberSaveable { mutableStateOf<LocalDate?>(null) }
     var showSavePreset by rememberSaveable { mutableStateOf(false) }
     var pendingRemoval by remember { mutableStateOf<WorkoutEntry?>(null) }
+
+    // One page per day: swipe left for the next day, right for the previous one.
+    val pagerState = rememberPagerState(initialPage = pageOf(selectedDate), pageCount = { DAY_PAGE_COUNT })
+    // Follow day changes made elsewhere (the calendar, the date picker, "Go to today").
+    LaunchedEffect(selectedDate) {
+        val page = pageOf(selectedDate)
+        if (page != pagerState.settledPage && page != pagerState.targetPage) {
+            if (abs(page - pagerState.currentPage) == 1) pagerState.animateScrollToPage(page) else pagerState.scrollToPage(page)
+        }
+    }
+    // When a swipe (or an arrow) settles on another day, that day becomes the selected one.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.drop(1).collect { viewModel.selectDate(dateOf(it)) }
+    }
+    val stepDay: (Int) -> Unit = { delta ->
+        scope.launch { pagerState.animateScrollToPage(pagerState.targetPage + delta) }
+    }
 
     val message = viewModel.message
     LaunchedEffect(message) {
@@ -109,7 +143,7 @@ fun WorkoutScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = viewModel::previousDay) {
+                    IconButton(onClick = { stepDay(-1) }) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous day")
                     }
                 },
@@ -121,16 +155,16 @@ fun WorkoutScreen(
                             .clickable { showDatePicker = true }
                             .padding(horizontal = 12.dp, vertical = 2.dp),
                     ) {
-                        Text(state.date.relativeLabel(), style = MaterialTheme.typography.titleMedium)
+                        Text(selectedDate.relativeLabel(), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            state.date.longLabel(),
+                            selectedDate.longLabel(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::nextDay) {
+                    IconButton(onClick = { stepDay(1) }) {
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next day")
                     }
                     Box {
@@ -138,7 +172,7 @@ fun WorkoutScreen(
                             Icon(Icons.Filled.MoreVert, contentDescription = "More")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            if (state.date != LocalDate.now()) {
+                            if (selectedDate != LocalDate.now()) {
                                 DropdownMenuItem(
                                     text = { Text("Go to today") },
                                     onClick = {
@@ -151,12 +185,12 @@ fun WorkoutScreen(
                                 text = { Text("Load preset") },
                                 onClick = {
                                     menuOpen = false
-                                    showPresetPicker = true
+                                    presetPickerDate = selectedDate
                                 },
                             )
                             DropdownMenuItem(
                                 text = { Text("Save day as preset") },
-                                enabled = state.entries.isNotEmpty(),
+                                enabled = state.date == selectedDate && state.entries.isNotEmpty(),
                                 onClick = {
                                     menuOpen = false
                                     showSavePreset = true
@@ -169,64 +203,38 @@ fun WorkoutScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { onAddExercise(state.date) },
+                onClick = { onAddExercise(selectedDate) },
                 icon = { Icon(Icons.Filled.Add, contentDescription = "Add exercise") },
                 text = { Text("Add exercise") },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Column(
-            Modifier
+        HorizontalPager(
+            state = pagerState,
+            // Keep the days on either side ready, so they slide in already filled.
+            beyondViewportPageCount = 1,
+            key = { it },
+            modifier = Modifier
                 .padding(padding)
-                .fillMaxSize(),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = summary(state),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            if (!state.loading && state.entries.isEmpty()) {
-                EmptyWorkout(
-                    hasPresets = presets.isNotEmpty(),
-                    onAddExercise = { onAddExercise(state.date) },
-                    onLoadPreset = { showPresetPicker = true },
-                )
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    itemsIndexed(state.entries, key = { _, entry -> entry.entry.id }) { index, entry ->
-                        ExerciseCard(
-                            entry = entry,
-                            trophies = state.trophies,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < state.entries.lastIndex,
-                            onClick = { onOpenEntry(entry.entry.id) },
-                            onMove = { delta -> viewModel.move(entry.entry.id, delta) },
-                            onRemove = {
-                                if (entry.sets.isEmpty()) viewModel.remove(entry.entry.id) else pendingRemoval = entry
-                            },
-                        )
-                    }
-                }
-            }
+                .fillMaxSize()
+                .testTag(DAY_PAGER_TAG),
+        ) { page ->
+            DayPage(
+                date = dateOf(page),
+                viewModel = viewModel,
+                hasPresets = presets.isNotEmpty(),
+                onAddExercise = onAddExercise,
+                onLoadPreset = { date -> presetPickerDate = date },
+                onOpenEntry = onOpenEntry,
+                onRemoveWithSets = { pendingRemoval = it },
+            )
         }
     }
 
     if (showDatePicker) {
         val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = state.date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
@@ -244,14 +252,14 @@ fun WorkoutScreen(
         }
     }
 
-    if (showPresetPicker) {
+    presetPickerDate?.let { date ->
         PresetPickerDialog(
             presets = presets,
             onPick = { preset ->
-                showPresetPicker = false
-                viewModel.loadPreset(preset)
+                presetPickerDate = null
+                viewModel.loadPreset(preset, date)
             },
-            onDismiss = { showPresetPicker = false },
+            onDismiss = { presetPickerDate = null },
         )
     }
 
@@ -279,6 +287,66 @@ fun WorkoutScreen(
             },
             onDismiss = { pendingRemoval = null },
         )
+    }
+}
+
+/** Test tag of the swipeable day pager. */
+const val DAY_PAGER_TAG = "day-pager"
+
+/** One day in the pager: its summary line, then its exercises (or the empty-day prompt). */
+@Composable
+private fun DayPage(
+    date: LocalDate,
+    viewModel: WorkoutViewModel,
+    hasPresets: Boolean,
+    onAddExercise: (LocalDate) -> Unit,
+    onLoadPreset: (LocalDate) -> Unit,
+    onOpenEntry: (Long) -> Unit,
+    onRemoveWithSets: (WorkoutEntry) -> Unit,
+) {
+    val state by remember(date) { viewModel.day(date) }.collectAsStateWithLifecycle(initialValue = WorkoutUiState(date = date))
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = if (state.loading) "" else summary(state),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (state.loading) return@Column
+        if (state.entries.isEmpty()) {
+            EmptyWorkout(
+                hasPresets = hasPresets,
+                onAddExercise = { onAddExercise(date) },
+                onLoadPreset = { onLoadPreset(date) },
+            )
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                itemsIndexed(state.entries, key = { _, entry -> entry.entry.id }) { index, entry ->
+                    ExerciseCard(
+                        entry = entry,
+                        trophies = state.trophies,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < state.entries.lastIndex,
+                        onClick = { onOpenEntry(entry.entry.id) },
+                        onMove = { delta -> state.workoutId?.let { viewModel.move(it, entry.entry.id, delta) } },
+                        onRemove = {
+                            if (entry.sets.isEmpty()) viewModel.remove(entry.entry.id) else onRemoveWithSets(entry)
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

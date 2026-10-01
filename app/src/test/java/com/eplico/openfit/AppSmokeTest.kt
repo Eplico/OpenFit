@@ -13,14 +13,19 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.eplico.openfit.ui.workout.DAY_PAGER_TAG
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -48,7 +53,7 @@ class AppSmokeTest {
     @Config(qualifiers = PHONE)
     fun logASetAndVisitEveryTab() {
         waitFor(hasText("Nothing logged for this day"))
-        compose.onAllNodesWithText("Add exercise").onFirst().performClick()
+        compose.onNodeWithContentDescription("Add exercise").performClick()
 
         // Exercise picker: search the starter library and pick one.
         waitFor(hasSetTextAction())
@@ -77,6 +82,13 @@ class AppSmokeTest {
         waitFor(hasText("Barbell Squat"))
         waitFor(hasText("1 exercise", substring = true))
 
+        // Swipe the day: left for tomorrow, right to come back to today.
+        compose.onNodeWithTag(DAY_PAGER_TAG).performTouchInput { swipeLeft() }
+        waitFor(hasText("Tomorrow"))
+        compose.onNodeWithTag(DAY_PAGER_TAG).performTouchInput { swipeRight() }
+        waitFor(hasText("Today"))
+        waitFor(hasText("1 exercise", substring = true))
+
         compose.onNodeWithText("Calendar").performClick()
         waitFor(hasText("Best streak"))
         waitFor(hasText("1/3")) // this week: 1 of the default 3 workouts
@@ -102,7 +114,7 @@ class AppSmokeTest {
     @Config(qualifiers = PHONE)
     fun logARunThenCreateAnExerciseOnTheNewExercisePage() {
         waitFor(hasText("Nothing logged for this day"))
-        compose.onAllNodesWithText("Add exercise").onFirst().performClick()
+        compose.onNodeWithContentDescription("Add exercise").performClick()
         waitFor(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("running")
         waitFor(hasText("Running"))
